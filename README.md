@@ -100,8 +100,9 @@ Cerrar y abrir la terminal para que las tome. Comprobar:
 
 1. **Pasar la cola** → [queue-manager](queue-manager/README.md): `python queue_bot.py`, dashboard en http://localhost:5000. Cuando una sesión pasa, **sube automáticamente las cookies al Worker**.
 2. **Obtener cookies para popular** → En `popular-reserva`:
-   - Ver cuándo se generaron: `python download_latest_cookies.py --status` (o abrí `https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status`)
-   - Bajar las cookies: `python download_latest_cookies.py` (las guarda en `Downloads` y local).
+   - Monitorear la cola en vivo: `python download_latest_cookies.py --watch` (o solo ver: `python download_latest_cookies.py --queue`)
+   - Ver estado completo y vigencia de cookies: `python download_latest_cookies.py --status` (o abrí en el cel `https://boca-cookies.rosaleseze86.workers.dev/api/queue/status`)
+   - Bajar las cookies ni bien pasan: `python download_latest_cookies.py` (las guarda en `Downloads` y local).
 3. **Popular**: correr el script de reserva → [popular-reserva](popular-reserva/README.md):
    `python order-popu-familia-rapido.py --evento 870 --workers 8 --delay 1`
 4. **Pagar sin fila**: abrir la extensión en Firefox o Chrome con el link `/go/Cangele2015` → [popular-reserva, paso 5](popular-reserva/README.md#5-pagar-sin-fila-extensión).

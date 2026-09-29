@@ -37,17 +37,22 @@ import requests as http_requests
 
 # --- Config Worker Cloudflare ---
 WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
+DEFAULT_WORKER_KEY = '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o'
+
 def _read_worker_key():
     key = os.environ.get('WORKER_API_KEY', '').strip()
-    if key or os.name != 'nt':
+    if key:
         return key
-    # setx no llega a terminales abiertas antes: leer directo del registro de Windows
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
-            return str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
-    except OSError:
-        return ''
+    if os.name == 'nt':
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+                val = str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
+                if val:
+                    return val
+        except OSError:
+            pass
+    return DEFAULT_WORKER_KEY
 
 WORKER_API_KEY = _read_worker_key()
 
@@ -940,6 +945,11 @@ class SessionManager:
             )
             if resp.ok:
                 self._last_heartbeat_time = now
+                best = stats.get('best_time')
+                best_str = f"{best} min" if best is not None else "calculando..."
+                logger.info(f"📡 Telemetría enviada al Worker -> Mejor tiempo: {best_str} | Activas: {stats.get('active_sessions')}/{stats.get('total_sessions')}")
+            else:
+                logger.warning(f"⚠️ Telemetría cola -> Worker FALLO: HTTP {resp.status_code}")
         except Exception as e:
             logger.debug(f"Error enviando telemetría de cola al Worker: {e}")
 
@@ -1271,6 +1281,17 @@ class SessionManager:
         
         self.monitor_thread = threading.Thread(target=monitor, daemon=True)
         self.monitor_thread.start()
+
+        def heartbeat_loop():
+            while self.running:
+                try:
+                    self._send_queue_heartbeat()
+                except Exception:
+                    pass
+                time.sleep(12)
+
+        self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
     
     def get_sessions_data(self) -> List[Dict]:
         """Obtiene datos de todas las sesiones para el dashboard"""

@@ -37,6 +37,10 @@ export default {
       return handleGetStatus(env);
     }
 
+    if ((path === '/api/queue/status' || path === '/api/queue') && request.method === 'GET') {
+      return handleGetQueueStatus(env);
+    }
+
     if (path === '/api/queue/heartbeat' && request.method === 'POST') {
       return handleQueueHeartbeat(request, env);
     }
@@ -152,7 +156,7 @@ async function handleGetStatus(env) {
   if (queue && queue.updated_at) {
     const qAgeMs = Date.now() - new Date(queue.updated_at).getTime();
     queue.age_seconds = Math.max(0, Math.round(qAgeMs / 1000));
-    queue.online = queue.age_seconds < 120;
+    queue.online = queue.age_seconds < 180;
   }
 
   if (!raw) {
@@ -172,6 +176,34 @@ async function handleGetStatus(env) {
     critical_count: data.critical_cookies ? data.critical_cookies.length : 0,
     evento: data.evento,
     queue: queue,
+  });
+}
+
+async function handleGetQueueStatus(env) {
+  const queueRaw = await env.COOKIES_KV.get('queue_status');
+  let queue = queueRaw ? JSON.parse(queueRaw) : null;
+
+  if (!queue) {
+    return json({
+      online: false,
+      message: 'No hay bot de cola reportando actualmente',
+      queue: null,
+    });
+  }
+
+  const qAgeMs = Date.now() - new Date(queue.updated_at).getTime();
+  queue.age_seconds = Math.max(0, Math.round(qAgeMs / 1000));
+  queue.online = queue.age_seconds < 180;
+
+  return json({
+    online: queue.online,
+    best_time_minutes: queue.best_time,
+    avg_time_minutes: queue.avg_time,
+    active_sessions: queue.active_sessions,
+    total_sessions: queue.total_sessions,
+    passed_sessions: queue.passed_sessions,
+    age_seconds: queue.age_seconds,
+    updated_at: queue.updated_at,
   });
 }
 

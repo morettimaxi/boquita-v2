@@ -77,15 +77,22 @@ En tu PC:
 ```bash
 cd C:\projects\boquita-v2\popular-reserva
 
-# A) Ver los mejores tiempos de la otra PC y estado de cookies:
+# A) Monitorear en vivo segundo a segundo (actualiza cada 4s y avisa ni bien pasa la fila):
+python download_latest_cookies.py --watch
+
+# B) Ver solo el estado actual de la cola (tiempo restante, sesiones activas):
+python download_latest_cookies.py --queue
+
+# C) Ver estado completo (cookies + cola):
 python download_latest_cookies.py --status
 
-# (O miralo en vivo desde el cel en: https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status)
-# Te muestra: Mejor tiempo restante, sesiones activas, y si ya hay cookies listas.
-
-# B) Cuando la otra PC pasa la fila, descargar las cookies:
+# D) Descargar las cookies manualmente:
 python download_latest_cookies.py
 ```
+
+> **Desde el celular o navegador:**
+> - Ver solo la cola en vivo: `https://boca-cookies.rosaleseze86.workers.dev/api/queue/status`
+> - Ver cola + estado de cookies: `https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status`
 
 *(Si hiciste la fila manual en Chrome, podés usar el script de consola F12 de más abajo).*
 

@@ -48,6 +48,16 @@ def check_status(worker_url: str):
     return None
 
 
+def check_queue_status(worker_url: str):
+    try:
+        r = requests.get(f'{worker_url}/api/queue/status', timeout=10)
+        if r.ok:
+            return r.json()
+    except Exception as e:
+        print(f"WARN: No se pudo consultar /api/queue/status: {e}")
+    return None
+
+
 def download_cookies(worker_url: str, code: str, api_key: str, output_path: str, force: bool = False):
     headers = {}
     if code:
@@ -199,6 +209,14 @@ def main():
         help='Solo consultar el estado en el worker sin descargar archivo'
     )
     parser.add_argument(
+        '--queue', action='store_true',
+        help='Ver estado de la fila reportado por el bot en la otra PC'
+    )
+    parser.add_argument(
+        '--watch', action='store_true',
+        help='Monitorear en vivo cada 4 segundos hasta que pasen la fila'
+    )
+    parser.add_argument(
         '--force', action='store_true',
         help='Guardar aunque las cookies parezcan antiguas'
     )
@@ -210,6 +228,63 @@ def main():
 
     code, api_key = get_credentials(args.code)
 
+    if args.watch:
+        print(f"[*] Monitoreando estado de la fila en vivo desde {args.url} (Ctrl+C para salir)...")
+        last_reported_passed = 0
+        try:
+            while True:
+                q = check_queue_status(args.url)
+                now_str = datetime.now().strftime('%H:%M:%S')
+                has_data = q and ('best_time_minutes' in q or 'best_time' in q or q.get('total_sessions') is not None)
+                if not has_data:
+                    print(f"[{now_str}] Esperando reporte del bot en la otra PC...")
+                else:
+                    online = q.get('online', False)
+                    best_t = q.get('best_time_minutes') if q.get('best_time_minutes') is not None else q.get('best_time')
+                    avg_t = q.get('avg_time_minutes') if q.get('avg_time_minutes') is not None else q.get('avg_time')
+                    act_s = q.get('active_sessions', 0)
+                    tot_s = q.get('total_sessions', 0)
+                    pass_s = q.get('passed_sessions', 0)
+                    age_s = q.get('age_seconds', 0)
+
+                    status_str = "ONLINE" if online else f"OFFLINE (hace {age_s}s)"
+                    best_str = f"{best_t} min" if best_t is not None else "calculando..."
+                    avg_str = f"{avg_t} min" if avg_t is not None else "N/A"
+
+                    print(f"[{now_str}] Bot: {status_str} | 🏆 Mejor: {best_str} | Prom: {avg_str} | Sesiones: {act_s}/{tot_s} | Pasadas: {pass_s}")
+
+                    if pass_s > last_reported_passed:
+                        print(f"\n🎉 ¡ALERTA! {pass_s} sesion(es) pasaron la fila. Descargando cookies automaticamente...")
+                        download_cookies(args.url, code, api_key, args.output, force=True)
+                        last_reported_passed = pass_s
+                time.sleep(4)
+        except KeyboardInterrupt:
+            print("\nMonitoreo finalizado.")
+            sys.exit(0)
+
+    if args.queue:
+        q = check_queue_status(args.url)
+        has_data = q and ('best_time_minutes' in q or 'best_time' in q or q.get('total_sessions') is not None)
+        if not has_data:
+            print("No hay telemetria de cola activa todavia en el Worker.")
+            print("Asegurate de haber iniciado queue_bot.py en la otra PC.")
+            sys.exit(0)
+        print("=== Monitoreo de Fila en Vivo (Bot en otra PC) ===")
+        age_s = q.get('age_seconds', 0)
+        if q.get('online'):
+            best_t = q.get('best_time_minutes') if q.get('best_time_minutes') is not None else q.get('best_time')
+            avg_t = q.get('avg_time_minutes') if q.get('avg_time_minutes') is not None else q.get('avg_time')
+            best_str = f"{best_t} min" if best_t is not None else "Calculando..."
+            avg_str = f"{avg_t} min" if avg_t is not None else "N/A"
+            print(f"  Estado del Bot:      ONLINE (Reporte hace {age_s}s)")
+            print(f"  🏆 Mejor Tiempo:     {best_str}")
+            print(f"  Tiempo Promedio:     {avg_str}")
+            print(f"  Sesiones:            {q.get('active_sessions', 0)} activas / {q.get('total_sessions', 0)} total")
+            print(f"  Ya Pasaron la Fila:  {q.get('passed_sessions', 0)}")
+        else:
+            print(f"  Estado del Bot:      OFFLINE (Ultimo reporte hace {age_s}s)")
+        sys.exit(0)
+
     if args.status:
         st = check_status(args.url)
         if not st:
@@ -218,40 +293,38 @@ def main():
 
         print("=== Estado de Cookies en el Worker ===")
         if not st.get('has_cookies'):
-            print("  Estado:            VACIO (No hay cookies subidas)")
-            sys.exit(0)
-
-        updated_at = st.get('updated_at', '')
-        age_mins = st.get('age_minutes', 0)
-        fresh = st.get('fresh', False)
-        crit = st.get('critical_count', 0)
-        evento = st.get('evento') or 'No especificado'
-
-        # Formato de tiempo local legible
-        tiempo_local = updated_at
-        try:
-            ts = updated_at.replace('Z', '+00:00')
-            dt_utc = datetime.fromisoformat(ts)
-            dt_local = dt_utc.astimezone()
-            tiempo_local = dt_local.strftime('%Y-%m-%d %H:%M:%S (%Z)')
-        except Exception:
-            pass
-
-        print(f"  Generadas / Subidas: {tiempo_local}")
-        print(f"  Antiguedad:          Hace {age_mins} minutos")
-        print(f"  Evento NID:          {evento}")
-        print(f"  Cookies Criticas:    {crit}")
-
-        if age_mins < 15:
-            print(f"  Vigencia:            EXCELENTE (Frescas)")
-        elif age_mins <= 75:
-            print(f"  Vigencia:            VIGENTES (Validas para operar)")
+            print("  Estado:              VACIO (No hay cookies subidas)")
         else:
-            print(f"  Vigencia:            VENCIDAS / EXPIRADAS (Tienen mas de 75 min)")
+            updated_at = st.get('updated_at', '')
+            age_mins = st.get('age_minutes', 0)
+            crit = st.get('critical_count', 0)
+            evento = st.get('evento') or 'No especificado'
+
+            # Formato de tiempo local legible
+            tiempo_local = updated_at
+            try:
+                ts = updated_at.replace('Z', '+00:00')
+                dt_utc = datetime.fromisoformat(ts)
+                dt_local = dt_utc.astimezone()
+                tiempo_local = dt_local.strftime('%Y-%m-%d %H:%M:%S (%Z)')
+            except Exception:
+                pass
+
+            print(f"  Generadas / Subidas: {tiempo_local}")
+            print(f"  Antiguedad:          Hace {age_mins} minutos")
+            print(f"  Evento NID:          {evento}")
+            print(f"  Cookies Criticas:    {crit}")
+
+            if age_mins < 15:
+                print(f"  Vigencia:            EXCELENTE (Frescas)")
+            elif age_mins <= 75:
+                print(f"  Vigencia:            VIGENTES (Validas para operar)")
+            else:
+                print(f"  Vigencia:            VENCIDAS / EXPIRADAS (Tienen mas de 75 min)")
 
         queue_info = st.get('queue')
-        if queue_info:
-            print("\n=== Monitoreo de Fila en Vivo (Bot en otra PC) ===")
+        print("\n=== Monitoreo de Fila en Vivo (Bot en otra PC) ===")
+        if queue_info and (queue_info.get('best_time') is not None or queue_info.get('total_sessions') is not None):
             age_s = queue_info.get('age_seconds', 0)
             if queue_info.get('online'):
                 best_t = queue_info.get('best_time')
@@ -270,6 +343,8 @@ def main():
                 print(f"  Ya Pasaron la Fila:  {pass_s}")
             else:
                 print(f"  Estado del Bot:      OFFLINE (Ultimo reporte hace {age_s}s)")
+        else:
+            print("  Estado del Bot:      SIN REPORTES (El bot aun no inicio o no envio heartbeat)")
 
         sys.exit(0)
 
