@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a1628; color: #e0e0e0; padding: 16px; }
+h1 { font-size: 14px; color: #f0c040; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.status { padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; }
+.status.ok { background: #0d2818; border: 1px solid #2d6a3e; }
+.status.warn { background: #2a1a00; border: 1px solid #6a4a00; }
+.status.err { background: #2a0a0a; border: 1px solid #6a2a2a; }
+.row { display: flex; justify-content: space-between; margin: 4px 0; }
+.label { color: #888; }
+.value { color: #fff; font-weight: 500; }
+.value.fresh { color: #4caf50; }
+.value.stale { color: #ff9800; }
+button { width: 100%; padding: 10px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; }
+.btn-refresh { background: #1a5276; color: #fff; }
+.btn-refresh:hover { background: #1f6f9f; }
+.btn-go { background: #f0c040; color: #000; }
+.btn-go:hover { background: #ffd700; }
+.btn-refresh:disabled { opacity: 0.5; cursor: wait; }
+.settings { margin-top: 10px; border-top: 1px solid #1a2a40; padding-top: 10px; }
+.settings summary { font-size: 11px; color: #666; cursor: pointer; }
+input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #1a2a40; border-radius: 4px; background: #0d1b2a; color: #fff; font-size: 11px; margin-top: 6px; }
+.footer { margin-top: 10px; font-size: 10px; color: #444; text-align: center; }
+</style>
+</head>
+<body>
+<h1>Boca Socios Cookies</h1>
+
+<div id="statusBox" class="status warn">Cargando...</div>
+
+<div id="details"></div>
+
+<button class="btn-refresh" id="btnRefresh">Actualizar cookies ahora</button>
+<button class="btn-go" id="btnGo">Ir a Boca Socios</button>
+
+<div class="settings" style="margin-top:10px;border-top:1px solid #1a2a40;padding-top:10px">
+  <label style="font-size:12px;color:#aaa">Codigo de acceso:</label>
+  <input type="password" id="accessCode" placeholder="Ingresa el codigo" style="width:100%;padding:6px 8px;border:1px solid #1a2a40;border-radius:4px;background:#0d1b2a;color:#fff;font-size:12px;margin-top:4px">
+  <button class="btn-refresh" id="btnSaveCode" style="margin-top:6px;font-size:11px;padding:6px">Guardar codigo</button>
+</div>
+
+<details class="settings">
+  <summary>Configuracion</summary>
+  <input type="text" id="serverUrl" placeholder="URL del server (ej: https://boca-cookies.xxx.workers.dev)">
+  <button class="btn-refresh" id="btnSave" style="margin-top:6px;font-size:11px;padding:6px">Guardar URL</button>
+</details>
+
+<div class="footer">Polling cada 2 minutos</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

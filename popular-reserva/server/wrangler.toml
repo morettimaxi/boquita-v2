@@ -1,0 +1,12 @@
+name = "boca-cookies"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+account_id = "e3d8681e5d0c271381da327ada8fcf6f"
+
+# API_KEY y ACCESS_CODE van como secrets:
+#   npx wrangler secret put API_KEY
+#   npx wrangler secret put ACCESS_CODE
+
+[[kv_namespaces]]
+binding = "COOKIES_KV"
+id = "e3bf0e87927b4965bc09f9c480f20935"

@@ -1,0 +1,18 @@
+# Datos personales / sesiones
+socios.csv
+boca_cookies*.json
+browser_cookies.json
+session_*
+tokens.txt
+order_*results_*.json
+order_*status.json
+*.log
+key.pem
+
+# Perfiles de navegador y builds
+chrome_profiles/
+.chrome-*/
+.firefox-*/
+node_modules/
+__pycache__/
+.wrangler/
