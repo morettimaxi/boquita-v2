@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
 """
-Queue Bot - Gestión de Sesiones para Colas con captura completa
+Queue Bot Cloud - Gestión de Sesiones para Colas con captura completa
 - Todo lo de v4 + captura de cookies HttpOnly via CDP
 - Captura localStorage de bocasocios
 - Auto-sube cookies + localStorage al Cloudflare Worker
-- La extensión de Chrome inyecta todo (como EBJ)
+- Envía telemetría en tiempo real (mejores tiempos de espera) al Worker
 """
+
+import os
+
+# ==============================================================================
+# CONFIGURACIÓN CLOUD WORKER - SUBIDA AUTOMÁTICA Y TELEMETRÍA
+# ==============================================================================
+# Variables de entorno al principio con sus valores listos para usar:
+os.environ.setdefault('WORKER_URL', 'https://boca-cookies.rosaleseze86.workers.dev')
+os.environ.setdefault('WORKER_API_KEY', '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o')
+
+WORKER_URL = os.environ['WORKER_URL']
+WORKER_API_KEY = os.environ['WORKER_API_KEY']
+# ==============================================================================
 
 # ⚙️ CONFIGURACIÓN: Cambiar entre 'local' o 'prod'
 ENVIRONMENT = 'prod'  # Cambiar a 'local' para testear
@@ -30,31 +43,9 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from flask import Flask, render_template, jsonify, request
 from urllib.parse import urlparse
-import os
 import logging
 from typing import List, Dict, Optional
 import requests as http_requests
-
-# --- Config Worker Cloudflare ---
-WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
-DEFAULT_WORKER_KEY = '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o'
-
-def _read_worker_key():
-    key = os.environ.get('WORKER_API_KEY', '').strip()
-    if key:
-        return key
-    if os.name == 'nt':
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
-                val = str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
-                if val:
-                    return val
-        except OSError:
-            pass
-    return DEFAULT_WORKER_KEY
-
-WORKER_API_KEY = _read_worker_key()
 
 # Configurar logging a terminal + archivo
 logging.basicConfig(
@@ -1753,7 +1744,8 @@ class SessionManager:
 session_manager = None
 
 # Aplicación Flask para el dashboard
-app = Flask(__name__)
+TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
 @app.route('/')
 def dashboard():
