@@ -28,11 +28,33 @@ gh repo clone morettimaxi/boquita-v2
 cd C:\projects\boquita-v2
 python -m pip install -r requirements.txt
 cd platea; npm install; cd ..
-setx WORKER_API_KEY "PEGAR_LA_KEY_ACA"
+setx WORKER_API_KEY "6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o"
 setx PYTHONUTF8 1
 ```
 
 > **Nota:** Crear `popular-reserva\socios.csv` con tus socios (no se sube al repo por seguridad).
+
+---
+
+## 🔑 Tokens y Claves del Worker (Cloudflare)
+
+Como este repositorio es privado, acá están los tokens vigentes y explicados:
+
+| Token / Clave | Valor Actual | Permisos / Función | Dónde se usa |
+|---|---|---|---|
+| **API Key (Escritura)** | `6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o` | Permite **subir** cookies al Worker (`POST /api/cookies`) | `queue_bot.py`, `upload_cookies.py`, `capture_browser.py`, `upload_latest_cookies.py` |
+| **Access Code (Lectura)** | `Cangele2015` | Permite **descargar** cookies y entrar por extensión (`GET /api/cookies/latest` y `/go/...`) | `download_latest_cookies.py` (`--token`), link de extensión `/go/Cangele2015` |
+
+> 💡 **Cómo cambiarlos más adelante por unos nuevos:**
+> 1. En `popular-reserva/server`:
+>    ```bash
+>    npx wrangler secret put API_KEY       # Ingresás la nueva API Key de subida
+>    npx wrangler secret put ACCESS_CODE   # Ingresás el nuevo token de descarga
+>    ```
+> 2. En tu Windows:
+>    ```powershell
+>    setx WORKER_API_KEY "TU_NUEVA_API_KEY"
+>    ```
 
 ---
 

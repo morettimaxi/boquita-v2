@@ -68,12 +68,19 @@ Si `python` abre la Microsoft Store, usar `py` en lugar de `python`.
 Sirve igual en Git Bash y PowerShell:
 
 ```bash
-setx WORKER_API_KEY "PEGAR_LA_KEY_ACA"
+setx WORKER_API_KEY "6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o"
 setx PYTHONUTF8 1
 ```
 
-- `WORKER_API_KEY`: para subir cookies al worker (queue_bot, upload_*). Pedirla, no está en el repo.
+- `WORKER_API_KEY`: clave para subir cookies al Worker (`POST /api/cookies`) desde los bots y scripts de upload.
 - `PYTHONUTF8=1`: evita errores de acentos/emojis en la consola.
+
+#### 🔑 Tokens del Worker (Cloudflare)
+Como este repositorio es privado, quedan documentadas las claves actuales:
+* **API Key de subida (escritura):** `6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o` (va en `WORKER_API_KEY`).
+* **Código de acceso / Token de descarga (lectura):** `Cangele2015` (usado por `download_latest_cookies.py` y el enlace de la extensión `/go/Cangele2015`).
+
+*(Si más adelante los cambiás en Cloudflare vía `npx wrangler secret put`, solo actualizás el `setx WORKER_API_KEY` en tu Windows).*
 
 Cerrar y abrir la terminal para que las tome. Comprobar:
 
