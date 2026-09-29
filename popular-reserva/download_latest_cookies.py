@@ -206,9 +206,43 @@ def main():
 
     if args.status:
         st = check_status(args.url)
-        if st:
-            print("Estado del Worker:")
-            print(json.dumps(st, indent=2))
+        if not st:
+            print("ERROR: No se pudo obtener respuesta del Worker.")
+            sys.exit(1)
+
+        print("=== Estado de Cookies en el Worker ===")
+        if not st.get('has_cookies'):
+            print("  Estado:            VACIO (No hay cookies subidas)")
+            sys.exit(0)
+
+        updated_at = st.get('updated_at', '')
+        age_mins = st.get('age_minutes', 0)
+        fresh = st.get('fresh', False)
+        crit = st.get('critical_count', 0)
+        evento = st.get('evento') or 'No especificado'
+
+        # Formato de tiempo local legible
+        tiempo_local = updated_at
+        try:
+            ts = updated_at.replace('Z', '+00:00')
+            dt_utc = datetime.fromisoformat(ts)
+            dt_local = dt_utc.astimezone()
+            tiempo_local = dt_local.strftime('%Y-%m-%d %H:%M:%S (%Z)')
+        except Exception:
+            pass
+
+        print(f"  Generadas / Subidas: {tiempo_local}")
+        print(f"  Antiguedad:          Hace {age_mins} minutos")
+        print(f"  Evento NID:          {evento}")
+        print(f"  Cookies Criticas:    {crit}")
+
+        if age_mins < 15:
+            print(f"  Vigencia:            EXCELENTE (Frescas)")
+        elif age_mins <= 75:
+            print(f"  Vigencia:            VIGENTES (Validas para operar)")
+        else:
+            print(f"  Vigencia:            VENCIDAS / EXPIRADAS (Tienen mas de 75 min)")
+
         sys.exit(0)
 
     ok = download_cookies(
