@@ -7,6 +7,19 @@ Queue Bot - Gestión de Sesiones para Colas con captura completa
 - La extensión de Chrome inyecta todo (como EBJ)
 """
 
+import os
+
+# ==============================================================================
+# CONFIGURACIÓN CLOUD WORKER - SUBIDA AUTOMÁTICA Y TELEMETRÍA
+# ==============================================================================
+# Variables de entorno al principio con sus valores listos para usar:
+os.environ.setdefault('WORKER_URL', 'https://boca-cookies.rosaleseze86.workers.dev')
+os.environ.setdefault('WORKER_API_KEY', '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o')
+
+WORKER_URL = os.environ['WORKER_URL']
+WORKER_API_KEY = os.environ['WORKER_API_KEY']
+# ==============================================================================
+
 # ⚙️ CONFIGURACIÓN: Cambiar entre 'local' o 'prod'
 ENVIRONMENT = 'prod'  # Cambiar a 'local' para testear
 
@@ -30,14 +43,9 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from flask import Flask, render_template, jsonify, request
 from urllib.parse import urlparse
-import os
 import logging
 from typing import List, Dict, Optional
 import requests as http_requests
-
-# --- Config Worker Cloudflare ---
-WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
-WORKER_API_KEY = os.environ.get('WORKER_API_KEY', '')
 
 # Configurar logging a terminal + archivo
 logging.basicConfig(
@@ -1997,6 +2005,10 @@ if __name__ == '__main__':
     print("Modo HEADLESS: Sin ventanas, 50% menos memoria, 2-3x mas rapido")
     print("Dashboard web para control facil")
     print("Dashboard disponible en: http://localhost:5000")
+    if WORKER_API_KEY:
+        print(f"WORKER_API_KEY: OK ({len(WORKER_API_KEY)} chars) - las cookies se suben solas al Worker")
+    else:
+        print("!!! WORKER_API_KEY vacia: las cookies NO se van a subir al Worker (HTTP 401).")
     print(f"\nEntorno: {ENVIRONMENT.upper()}")
     print("   Configuracion por defecto:")
     print(f"   - URL: {URLS[ENVIRONMENT]}")
