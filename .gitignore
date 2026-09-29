@@ -16,3 +16,12 @@ chrome_profiles/
 node_modules/
 __pycache__/
 .wrangler/
+
+# Platea (generados)
+queue-cookies*.txt
+shared-token*.json
+sectors-event-*.json
+log-*.txt
+reserva.txt
+data-consumption.txt
+*.tmp

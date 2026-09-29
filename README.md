@@ -2,6 +2,7 @@
 
 - `queue-manager/` — pasa la cola de Boca Socios con varias sesiones de Chrome. Ver [queue-manager/README.md](queue-manager/README.md).
 - `popular-reserva/` — confirma / reserva por API para los socios de `socios.csv`, y extensión para pagar sin fila. Ver [popular-reserva/README.md](popular-reserva/README.md).
+- `platea/` — laterales (Node): reserva plateas por sector. Ver [platea/README.md](platea/README.md). Necesita Node (`winget install -e --id OpenJS.NodeJS.LTS`).
 
 ## Instalar (Windows, una sola vez)
 
