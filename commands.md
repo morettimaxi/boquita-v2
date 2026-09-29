@@ -60,27 +60,30 @@ Como este repositorio es privado, acá están los tokens vigentes y explicados:
 
 ## ⚡ El día del partido (Paso a Paso)
 
-### 1. Pasar la fila
-En una terminal:
+### 1. Pasar la fila (en la otra PC)
+En la PC donde corre el bot:
 ```bash
 cd C:\projects\boquita-v2\queue-manager
 python queue_bot.py
 ```
-Abrir `http://localhost:5000` y lanzar sesiones. Apenas pasa la cola, **sube las cookies automáticamente al Worker**.
+Abrir `http://localhost:5000` y lanzar sesiones.
+- **Telemetría en vivo:** Cada 10 segundos el bot le manda al Worker el **mejor tiempo restante** de espera de sus sesiones y cuántas van activas.
+- Apenas una sesión pasa la cola, **sube las cookies automáticamente al Worker**.
 
 ---
 
-### 2. Cookies: Consultar y Descargar del Worker
-En otra terminal (o desde cualquier PC):
+### 2. Monitorear tiempos y Descargar Cookies (desde tu PC o celular)
+En tu PC:
 ```bash
 cd C:\projects\boquita-v2\popular-reserva
 
-# A) Ver si ya estan disponibles y que tan frescas son:
+# A) Ver los mejores tiempos de la otra PC y estado de cookies:
 python download_latest_cookies.py --status
 
-# (O miralo desde el cel en: https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status)
+# (O miralo en vivo desde el cel en: https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status)
+# Te muestra: Mejor tiempo restante, sesiones activas, y si ya hay cookies listas.
 
-# B) Descargar las cookies (las guarda en Downloads y en la carpeta actual):
+# B) Cuando la otra PC pasa la fila, descargar las cookies:
 python download_latest_cookies.py
 ```
 

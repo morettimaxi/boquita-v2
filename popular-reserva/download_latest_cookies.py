@@ -243,6 +243,28 @@ def main():
         else:
             print(f"  Vigencia:            VENCIDAS / EXPIRADAS (Tienen mas de 75 min)")
 
+        queue_info = st.get('queue')
+        if queue_info:
+            print("\n=== Monitoreo de Fila en Vivo (Bot en otra PC) ===")
+            age_s = queue_info.get('age_seconds', 0)
+            if queue_info.get('online'):
+                best_t = queue_info.get('best_time')
+                avg_t = queue_info.get('avg_time')
+                act_s = queue_info.get('active_sessions', 0)
+                tot_s = queue_info.get('total_sessions', 0)
+                pass_s = queue_info.get('passed_sessions', 0)
+
+                best_str = f"{best_t} min" if best_t is not None else "Calculando..."
+                avg_str = f"{avg_t} min" if avg_t is not None else "N/A"
+
+                print(f"  Estado del Bot:      ONLINE (Reporte hace {age_s}s)")
+                print(f"  🏆 Mejor Tiempo:     {best_str}")
+                print(f"  Tiempo Promedio:     {avg_str}")
+                print(f"  Sesiones:            {act_s} activas / {tot_s} total")
+                print(f"  Ya Pasaron la Fila:  {pass_s}")
+            else:
+                print(f"  Estado del Bot:      OFFLINE (Ultimo reporte hace {age_s}s)")
+
         sys.exit(0)
 
     ok = download_cookies(

@@ -37,6 +37,10 @@ export default {
       return handleGetStatus(env);
     }
 
+    if (path === '/api/queue/heartbeat' && request.method === 'POST') {
+      return handleQueueHeartbeat(request, env);
+    }
+
     if (path === '/api/cookies/clear' && request.method === 'POST') {
       const apiKey = request.headers.get('X-API-Key');
       if (apiKey !== env.API_KEY) return json({ error: 'Unauthorized' }, 401);
@@ -142,8 +146,17 @@ async function handleGetLatest(request, env) {
 
 async function handleGetStatus(env) {
   const raw = await env.COOKIES_KV.get('latest');
+  const queueRaw = await env.COOKIES_KV.get('queue_status');
+  let queue = queueRaw ? JSON.parse(queueRaw) : null;
+
+  if (queue && queue.updated_at) {
+    const qAgeMs = Date.now() - new Date(queue.updated_at).getTime();
+    queue.age_seconds = Math.max(0, Math.round(qAgeMs / 1000));
+    queue.online = queue.age_seconds < 120;
+  }
+
   if (!raw) {
-    return json({ has_cookies: false });
+    return json({ has_cookies: false, queue: queue });
   }
 
   const data = JSON.parse(raw);
@@ -158,7 +171,36 @@ async function handleGetStatus(env) {
     fresh: ageMins < 5,
     critical_count: data.critical_cookies ? data.critical_cookies.length : 0,
     evento: data.evento,
+    queue: queue,
   });
+}
+
+async function handleQueueHeartbeat(request, env) {
+  const apiKey = request.headers.get('X-API-Key');
+  if (apiKey !== env.API_KEY) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const queueData = {
+    best_time: body.best_time !== undefined ? body.best_time : null,
+    avg_time: body.avg_time !== undefined ? body.avg_time : null,
+    active_sessions: body.active_sessions || 0,
+    total_sessions: body.total_sessions || 0,
+    passed_sessions: body.passed_sessions || 0,
+    opening_time: body.opening_time || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  await env.COOKIES_KV.put('queue_status', JSON.stringify(queueData), { expirationTtl: 600 });
+
+  return json({ ok: true, updated_at: queueData.updated_at });
 }
 
 function handleGoPage(code, env) {

@@ -910,6 +910,39 @@ class SessionManager:
         except Exception as e:
             logger.warning(f"UPLOAD sesion {session_id} -> Worker ERROR: {e}")
 
+    def _send_queue_heartbeat(self):
+        """Envía telemetría de tiempos de espera al Cloudflare Worker para monitoreo remoto"""
+        if not WORKER_API_KEY:
+            return
+
+        now = time.time()
+        # Enviar como máximo cada 10 segundos
+        if hasattr(self, '_last_heartbeat_time') and (now - self._last_heartbeat_time < 10):
+            return
+
+        try:
+            stats = self.get_stats()
+            # Contar sesiones que ya pasaron la fila
+            passed = sum(1 for s in self.sessions if s.get('captured_redirect_url') or s.get('cookies_saved'))
+            payload = {
+                'best_time': stats.get('best_time'),
+                'avg_time': round(stats['avg_time'], 1) if stats.get('avg_time') is not None else None,
+                'active_sessions': stats.get('active_sessions', 0),
+                'total_sessions': stats.get('total_sessions', 0),
+                'passed_sessions': passed,
+                'opening_time': self.opening_time,
+            }
+            resp = http_requests.post(
+                f'{WORKER_URL}/api/queue/heartbeat',
+                json=payload,
+                headers={'X-API-Key': WORKER_API_KEY, 'Content-Type': 'application/json'},
+                timeout=5
+            )
+            if resp.ok:
+                self._last_heartbeat_time = now
+        except Exception as e:
+            logger.debug(f"Error enviando telemetría de cola al Worker: {e}")
+
     def burst_refresh_all(self, max_retries: int = 3) -> Dict:
         """⚡⚡⚡ BURST: Refresca TODAS las sesiones SIMULTÁNEAMENTE sin delays
         
@@ -1229,6 +1262,7 @@ class SessionManager:
                         pass
                     
                     self.update_session_data()
+                    self._send_queue_heartbeat()
                     time.sleep(monitor_interval)
                     
                 except Exception as e:
