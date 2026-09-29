@@ -45,13 +45,19 @@ python download_latest_cookies.py
 ```
 
 - Usa por defecto el token `Cangele2015` (o podés pasar `--token TU_TOKEN`).
-- Descarga y guarda `boca_cookies_worker.json`.
+- **Guarda automáticamente en dos lugares:**
+  1. En `Downloads` (`C:\Users\moret\Downloads\boca_cookies_worker.json`)
+  2. En la carpeta local (`boca_cookies_worker.json`)
 - Muestra la antigüedad de las cookies y si contienen `QueueITAccepted`.
-- **Los scripts de popular (`order-popu*`) detectan y usan este archivo automáticamente** porque toma el más reciente de la carpeta.
+- **Los scripts de popular (`order-popu*`) detectan y usan este archivo automáticamente** porque eligen el archivo de cookies más nuevo disponible.
 
-Para ver el estado en el worker sin descargar:
+**Consultar estado y fecha de generación de las cookies en el Worker:**
 ```bash
+# Desde la terminal:
 python download_latest_cookies.py --status
+
+# O directo en el navegador / celular:
+https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status
 ```
 
 ### Opción B: Exportar manual desde el Chrome que pasó la fila
@@ -135,6 +141,19 @@ npx wrangler secret put API_KEY
 npx wrangler secret put ACCESS_CODE
 npx wrangler deploy
 ```
+
+## 6. Referencia de scripts en esta carpeta
+
+| Script | Para qué sirve | Parámetros principales |
+|---|---|---|
+| `download_latest_cookies.py` | Descarga las últimas cookies del Worker usando el token | `--token`, `--status`, `--force`, `--output` |
+| `order-popu-familia-rapido.py` | **Principal reserva:** titular + grupo familiar con delay fijo rápido | `--evento` (req), `--workers` (def: 5), `--delay` (def: 1.5), `--dry-run`, `--cookies` |
+| `order-popu-familia.py` | Variante familiar con delay incremental escalonado | `--evento` (req), `--workers`, `--dry-run`, `--cookies` |
+| `order-popu.py` | Reserva solo para titulares (sin grupo familiar) | `--evento` (req), `--workers`, `--dry-run`, `--cookies` |
+| `adherentes.py` | Reserva adicional para adherentes (sin pasarela) | `--evento` (req), `--workers`, `--dry-run`, `--cookies` |
+| `adicional_copa.py` | Reserva adicional para partidos de copa | `--evento` (req), `--workers`, `--dry-run`, `--cookies` |
+| `abrir-pago.py` | Abre un Chrome por socio logueado listo para abonar | `--csv socios.csv`, `--evento`, `--email`, `--password` |
+| `upload_latest_cookies.py` | Sube el archivo `boca_cookies*.json` más reciente de Downloads al Worker | `--evento`, `--force`, `--file` |
 
 ## Problemas
 

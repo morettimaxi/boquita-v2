@@ -91,7 +91,11 @@ Cerrar y abrir la terminal para que las tome. Comprobar:
 
 ## 2. Orden de un día de partido
 
-1. **Pasar la cola** → [queue-manager](queue-manager/README.md): `python queue_bot.py`, dashboard en http://localhost:5000.
-2. **Popular**: exportar cookies del Chrome que pasó la cola y correr el script del caso → [popular-reserva](popular-reserva/README.md).
-3. **Pagar sin fila**: subir cookies al worker y abrir la extensión → [popular-reserva, paso 5](popular-reserva/README.md#5-pagar-sin-fila-extensión).
-4. **Plateas**: primero `cookie-refresher-proxy.js`, después `laterales-v22-multi.js` → [platea](platea/README.md).
+1. **Pasar la cola** → [queue-manager](queue-manager/README.md): `python queue_bot.py`, dashboard en http://localhost:5000. Cuando una sesión pasa, **sube automáticamente las cookies al Worker**.
+2. **Obtener cookies para popular** → En `popular-reserva`:
+   - Ver cuándo se generaron: `python download_latest_cookies.py --status` (o abrí `https://boca-cookies.rosaleseze86.workers.dev/api/cookies/status`)
+   - Bajar las cookies: `python download_latest_cookies.py` (las guarda en `Downloads` y local).
+3. **Popular**: correr el script de reserva → [popular-reserva](popular-reserva/README.md):
+   `python order-popu-familia-rapido.py --evento 870 --workers 8 --delay 1`
+4. **Pagar sin fila**: abrir la extensión en Firefox o Chrome con el link `/go/Cangele2015` → [popular-reserva, paso 5](popular-reserva/README.md#5-pagar-sin-fila-extensión).
+5. **Plateas**: primero `cookie-refresher-proxy.js`, después `laterales-v22-multi.js` → [platea](platea/README.md).
