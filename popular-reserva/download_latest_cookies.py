@@ -135,14 +135,40 @@ def download_cookies(worker_url: str, code: str, api_key: str, output_path: str,
     else:
         print(f"  Actualizadas:      {updated_at_str}")
 
-    # Guardar archivo en formato 100% compatible
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        print(f"\nGuardado exitoso en: {os.path.abspath(output_path)}")
-    except Exception as e:
-        print(f"ERROR guardando archivo {output_path}: {e}")
+    # Guardar archivo en formato 100% compatible en Downloads y en carpeta local
+    saved_paths = []
+    downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    target_paths = [output_path]
+
+    # Si output_path es relativo, tambien guardamos en Downloads
+    if not os.path.isabs(output_path):
+        target_paths.append(os.path.join(downloads_dir, os.path.basename(output_path)))
+
+    # Quitar duplicados preservando orden
+    seen = set()
+    unique_targets = []
+    for p in target_paths:
+        abs_p = os.path.abspath(p)
+        if abs_p not in seen:
+            seen.add(abs_p)
+            unique_targets.append(p)
+
+    for p in unique_targets:
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
+            with open(p, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            saved_paths.append(os.path.abspath(p))
+        except Exception as e:
+            print(f"WARN guardando en {p}: {e}")
+
+    if not saved_paths:
+        print(f"ERROR guardando archivo de cookies.")
         return False
+
+    print("\nGuardado exitoso en:")
+    for sp in saved_paths:
+        print(f"  -> {sp}")
 
     print("\nPara correr popular usando este archivo:")
     print(f"  python order-popu-familia-rapido.py --evento {data.get('evento') or 870} --cookies {output_path}")
