@@ -5,6 +5,7 @@
 | `queue-manager/` | Pasa la cola de Boca Socios con varias sesiones de Chrome | [queue-manager/README.md](queue-manager/README.md) |
 | `popular-reserva/` | Confirma / reserva popular por API para los socios de `socios.csv` + extensión para pagar sin fila | [popular-reserva/README.md](popular-reserva/README.md) |
 | `platea/` | Laterales (Node): reserva plateas por sector | [platea/README.md](platea/README.md) |
+| `cloud/` | **Nuevo:** Operación remota entre 2 PCs, telemetría de fila en vivo y auto-descarga de cookies | [cloud/README.md](cloud/README.md) |
 
 Todos los comandos están en dos versiones: **Git Bash** y **PowerShell**. Usá la que tengas abierta.
 

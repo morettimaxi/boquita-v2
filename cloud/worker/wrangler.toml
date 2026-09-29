@@ -1,0 +1,12 @@
+name = "boca-cookies"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+account_id = "e3d8681e5d0c271381da327ada8fcf6f"
+
+[vars]
+API_KEY = "6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o"
+ACCESS_CODE = "Cangele2015"
+
+[[kv_namespaces]]
+binding = "COOKIES_KV"
+id = "e3bf0e87927b4965bc09f9c480f20935"

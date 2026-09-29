@@ -37,7 +37,24 @@ import requests as http_requests
 
 # --- Config Worker Cloudflare ---
 WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
-WORKER_API_KEY = os.environ.get('WORKER_API_KEY', '')
+DEFAULT_WORKER_KEY = '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o'
+
+def _read_worker_key():
+    key = os.environ.get('WORKER_API_KEY', '').strip()
+    if key:
+        return key
+    if os.name == 'nt':
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+                val = str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
+                if val:
+                    return val
+        except OSError:
+            pass
+    return DEFAULT_WORKER_KEY
+
+WORKER_API_KEY = _read_worker_key()
 
 # Configurar logging a terminal + archivo
 logging.basicConfig(
@@ -898,6 +915,44 @@ class SessionManager:
         except Exception as e:
             logger.warning(f"UPLOAD sesion {session_id} -> Worker ERROR: {e}")
 
+    def _send_queue_heartbeat(self):
+        """Envía telemetría de tiempos de espera al Cloudflare Worker para monitoreo remoto"""
+        if not WORKER_API_KEY:
+            return
+
+        now = time.time()
+        # Enviar como máximo cada 10 segundos
+        if hasattr(self, '_last_heartbeat_time') and (now - self._last_heartbeat_time < 10):
+            return
+
+        try:
+            stats = self.get_stats()
+            # Contar sesiones que ya pasaron la fila
+            passed = sum(1 for s in self.sessions if s.get('captured_redirect_url') or s.get('cookies_saved'))
+            payload = {
+                'best_time': stats.get('best_time'),
+                'avg_time': round(stats['avg_time'], 1) if stats.get('avg_time') is not None else None,
+                'active_sessions': stats.get('active_sessions', 0),
+                'total_sessions': stats.get('total_sessions', 0),
+                'passed_sessions': passed,
+                'opening_time': self.opening_time,
+            }
+            resp = http_requests.post(
+                f'{WORKER_URL}/api/queue/heartbeat',
+                json=payload,
+                headers={'X-API-Key': WORKER_API_KEY, 'Content-Type': 'application/json'},
+                timeout=5
+            )
+            if resp.ok:
+                self._last_heartbeat_time = now
+                best = stats.get('best_time')
+                best_str = f"{best} min" if best is not None else "calculando..."
+                logger.info(f"📡 Telemetría enviada al Worker -> Mejor tiempo: {best_str} | Activas: {stats.get('active_sessions')}/{stats.get('total_sessions')}")
+            else:
+                logger.warning(f"⚠️ Telemetría cola -> Worker FALLO: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.debug(f"Error enviando telemetría de cola al Worker: {e}")
+
     def burst_refresh_all(self, max_retries: int = 3) -> Dict:
         """⚡⚡⚡ BURST: Refresca TODAS las sesiones SIMULTÁNEAMENTE sin delays
         
@@ -1217,6 +1272,7 @@ class SessionManager:
                         pass
                     
                     self.update_session_data()
+                    self._send_queue_heartbeat()
                     time.sleep(monitor_interval)
                     
                 except Exception as e:
@@ -1225,6 +1281,17 @@ class SessionManager:
         
         self.monitor_thread = threading.Thread(target=monitor, daemon=True)
         self.monitor_thread.start()
+
+        def heartbeat_loop():
+            while self.running:
+                try:
+                    self._send_queue_heartbeat()
+                except Exception:
+                    pass
+                time.sleep(12)
+
+        self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
     
     def get_sessions_data(self) -> List[Dict]:
         """Obtiene datos de todas las sesiones para el dashboard"""
@@ -1997,6 +2064,11 @@ if __name__ == '__main__':
     print("Modo HEADLESS: Sin ventanas, 50% menos memoria, 2-3x mas rapido")
     print("Dashboard web para control facil")
     print("Dashboard disponible en: http://localhost:5000")
+    if WORKER_API_KEY:
+        print(f"WORKER_API_KEY: OK ({len(WORKER_API_KEY)} chars) - las cookies se suben solas al Worker")
+    else:
+        print("!!! WORKER_API_KEY vacia: las cookies NO se van a subir al Worker (HTTP 401).")
+        print("!!! Correr: setx WORKER_API_KEY \"LA_KEY\" y abrir una terminal nueva.")
     print(f"\nEntorno: {ENVIRONMENT.upper()}")
     print("   Configuracion por defecto:")
     print(f"   - URL: {URLS[ENVIRONMENT]}")

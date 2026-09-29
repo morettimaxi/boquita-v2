@@ -63,11 +63,11 @@ Como este repositorio es privado, acá están los tokens vigentes y explicados:
 ### 1. Pasar la fila (en la otra PC)
 En la PC donde corre el bot:
 ```bash
-cd C:\projects\boquita-v2\queue-manager
-python queue_bot.py
+cd C:\projects\boquita-v2\cloud
+python queue_bot_cloud.py
 ```
 Abrir `http://localhost:5000` y lanzar sesiones.
-- **Telemetría en vivo:** Cada 10 segundos el bot le manda al Worker el **mejor tiempo restante** de espera de sus sesiones y cuántas van activas.
+- **Telemetría en vivo:** Cada 10-12 segundos el bot le manda al Worker el **mejor tiempo restante** de espera de sus sesiones y cuántas van activas.
 - Apenas una sesión pasa la cola, **sube las cookies automáticamente al Worker**.
 
 ---
@@ -75,19 +75,19 @@ Abrir `http://localhost:5000` y lanzar sesiones.
 ### 2. Monitorear tiempos y Descargar Cookies (desde tu PC o celular)
 En tu PC:
 ```bash
-cd C:\projects\boquita-v2\popular-reserva
+cd C:\projects\boquita-v2\cloud
 
 # A) Monitorear en vivo segundo a segundo (actualiza cada 4s y avisa ni bien pasa la fila):
-python download_latest_cookies.py --watch
+python monitor.py --watch
 
 # B) Ver solo el estado actual de la cola (tiempo restante, sesiones activas):
-python download_latest_cookies.py --queue
+python monitor.py --queue
 
 # C) Ver estado completo (cookies + cola):
-python download_latest_cookies.py --status
+python monitor.py --status
 
 # D) Descargar las cookies manualmente:
-python download_latest_cookies.py
+python monitor.py --download
 ```
 
 > **Desde el celular o navegador:**
