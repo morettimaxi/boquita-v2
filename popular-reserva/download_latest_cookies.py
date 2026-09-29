@@ -177,6 +177,12 @@ def download_cookies(worker_url: str, code: str, api_key: str, output_path: str,
 
 
 def main():
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description='Descarga las ultimas cookies del Cloudflare Worker a un archivo compatible con scripts de popular'
     )
