@@ -15,7 +15,21 @@ import sys
 import requests
 
 WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
-WORKER_API_KEY = os.environ.get('WORKER_API_KEY', '')
+
+
+def _read_worker_key():
+    key = os.environ.get('WORKER_API_KEY', '').strip()
+    if key or os.name != 'nt':
+        return key
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+            return str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
+    except OSError:
+        return ''
+
+
+WORKER_API_KEY = _read_worker_key()
 
 
 def find_latest_cookie_file(explicit=None):

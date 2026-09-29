@@ -17,6 +17,19 @@ from selenium.webdriver.chrome.options import Options
 
 BOCA_URL = 'https://bocasocios.bocajuniors.com.ar'
 
+
+def _read_worker_key():
+    key = os.environ.get('WORKER_API_KEY', '').strip()
+    if key or os.name != 'nt':
+        return key
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+            return str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
+    except OSError:
+        return ''
+
+
 def main():
     parser = argparse.ArgumentParser(description='Captura cookies + localStorage de bocasocios')
     parser.add_argument('--upload', action='store_true', help='Subir al Worker después de capturar')
@@ -128,11 +141,12 @@ def main():
                 'source': 'capture-browser-manual',
                 'active': True,
             }
+            api_key = _read_worker_key()
             resp = requests.post(
                 'https://boca-cookies.rosaleseze86.workers.dev/api/cookies',
                 json=payload,
                 headers={
-                    'X-API-Key': os.environ.get('WORKER_API_KEY', ''),
+                    'X-API-Key': api_key,
                     'Content-Type': 'application/json',
                 },
                 timeout=10,
