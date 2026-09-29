@@ -37,7 +37,19 @@ import requests as http_requests
 
 # --- Config Worker Cloudflare ---
 WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
-WORKER_API_KEY = os.environ.get('WORKER_API_KEY', '')
+def _read_worker_key():
+    key = os.environ.get('WORKER_API_KEY', '').strip()
+    if key or os.name != 'nt':
+        return key
+    # setx no llega a terminales abiertas antes: leer directo del registro de Windows
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+            return str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
+    except OSError:
+        return ''
+
+WORKER_API_KEY = _read_worker_key()
 
 # Configurar logging a terminal + archivo
 logging.basicConfig(
@@ -1997,6 +2009,11 @@ if __name__ == '__main__':
     print("Modo HEADLESS: Sin ventanas, 50% menos memoria, 2-3x mas rapido")
     print("Dashboard web para control facil")
     print("Dashboard disponible en: http://localhost:5000")
+    if WORKER_API_KEY:
+        print(f"WORKER_API_KEY: OK ({len(WORKER_API_KEY)} chars) - las cookies se suben solas al Worker")
+    else:
+        print("!!! WORKER_API_KEY vacia: las cookies NO se van a subir al Worker (HTTP 401).")
+        print("!!! Correr: setx WORKER_API_KEY \"LA_KEY\" y abrir una terminal nueva.")
     print(f"\nEntorno: {ENVIRONMENT.upper()}")
     print("   Configuracion por defecto:")
     print(f"   - URL: {URLS[ENVIRONMENT]}")
