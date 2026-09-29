@@ -34,6 +34,28 @@ Sale de la URL de Boca Socios: `.../matches/870/...` → evento `870`.
 
 ## 3. Cookies de la cola
 
+Hay dos formas de tener las cookies:
+
+### Opción A (Recomendada): Descargar del Worker con token
+
+Si el `queue_bot.py` ya pasó la cola y subió las cookies (o se subieron desde otra PC):
+
+```bash
+python download_latest_cookies.py
+```
+
+- Usa por defecto el token `Cangele2015` (o podés pasar `--token TU_TOKEN`).
+- Descarga y guarda `boca_cookies_worker.json`.
+- Muestra la antigüedad de las cookies y si contienen `QueueITAccepted`.
+- **Los scripts de popular (`order-popu*`) detectan y usan este archivo automáticamente** porque toma el más reciente de la carpeta.
+
+Para ver el estado en el worker sin descargar:
+```bash
+python download_latest_cookies.py --status
+```
+
+### Opción B: Exportar manual desde el Chrome que pasó la fila
+
 1. En el Chrome que **pasó la cola** (el del queue_bot o uno manual), estar en Boca Socios.
 2. `F12` → pestaña **Console** → escribir `allow pasting` + Enter.
 3. Pegar esto + Enter:
