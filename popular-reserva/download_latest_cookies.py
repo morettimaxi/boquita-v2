@@ -54,7 +54,11 @@ def check_status(worker_url: str):
 
 def check_queue_status(worker_url: str):
     try:
-        r = requests.get(f'{worker_url}/api/queue/status', timeout=10)
+        r = requests.get(
+            f'{worker_url}/api/queue/status',
+            headers={'User-Agent': 'boca-queue-bot'},
+            timeout=10,
+        )
         if r.ok:
             return r.json()
     except Exception as e:
@@ -322,7 +326,9 @@ def main():
                     best_str = f"{best_t} min" if best_t is not None else "calculando..."
                     avg_str = f"{avg_t} min" if avg_t is not None else "N/A"
 
-                    print(f"[{now_str}] Bot: {status_str} | 🏆 Mejor: {best_str} | Prom: {avg_str} | Sesiones: {act_s}/{tot_s} | Pasadas: {pass_s}")
+                    best_name = q.get('best_server') or ''
+                    who = f" en {best_name}" if best_name else ""
+                    print(f"[{now_str}] Bot: {status_str} | Mejor{who}: {best_str} | Prom: {avg_str} | Sesiones: {act_s}/{tot_s} | Pasadas: {pass_s}")
 
                     if pass_s > last_reported_passed:
                         print(f"\n🎉 ¡ALERTA! {pass_s} sesion(es) pasaron la fila. Descargando cookies automaticamente...")
@@ -335,25 +341,40 @@ def main():
 
     if args.queue:
         q = check_queue_status(args.url)
-        has_data = q and ('best_time_minutes' in q or 'best_time' in q or q.get('total_sessions') is not None)
+        servers = (q or {}).get('servers') or []
+        has_data = q and (
+            'best_time_minutes' in q or 'best_time' in q or q.get('total_sessions') is not None or servers
+        )
         if not has_data:
             print("No hay telemetria de cola activa todavia en el Worker.")
-            print("Asegurate de haber iniciado queue_bot.py en la otra PC.")
+            print("Asegurate de haber iniciado queue_bot_418.py en el servidor.")
             sys.exit(0)
-        print("=== Monitoreo de Fila en Vivo (Bot en otra PC) ===")
-        age_s = q.get('age_seconds', 0)
-        if q.get('online'):
-            best_t = q.get('best_time_minutes') if q.get('best_time_minutes') is not None else q.get('best_time')
-            avg_t = q.get('avg_time_minutes') if q.get('avg_time_minutes') is not None else q.get('avg_time')
-            best_str = f"{best_t} min" if best_t is not None else "Calculando..."
-            avg_str = f"{avg_t} min" if avg_t is not None else "N/A"
-            print(f"  Estado del Bot:      ONLINE (Reporte hace {age_s}s)")
-            print(f"  🏆 Mejor Tiempo:     {best_str}")
-            print(f"  Tiempo Promedio:     {avg_str}")
-            print(f"  Sesiones:            {q.get('active_sessions', 0)} activas / {q.get('total_sessions', 0)} total")
-            print(f"  Ya Pasaron la Fila:  {q.get('passed_sessions', 0)}")
-        else:
-            print(f"  Estado del Bot:      OFFLINE (Ultimo reporte hace {age_s}s)")
+        print("=== Fila por servidor ===")
+        if q.get('best_server'):
+            best_t = q.get('best_time_minutes')
+            best_str = f"{best_t} min" if best_t is not None else "calculando"
+            print(
+                f"Mejor ahora: {q.get('best_server')} ({best_str}) | "
+                f"cookies subidas: {q.get('cookies_uploaded', 0)}"
+            )
+        if not servers:
+            age_s = q.get('age_seconds', 0)
+            state = "ONLINE" if q.get('online') else f"OFFLINE (hace {age_s}s)"
+            print(f"  Un solo reporte: {state}, mejor {q.get('best_time_minutes')} min")
+            sys.exit(0)
+        for server in servers:
+            age_s = server.get('age_seconds', 0)
+            state = "ONLINE" if server.get('online') else f"OFFLINE hace {age_s}s"
+            print(
+                f"\n{server.get('server_name')}  {state}  "
+                f"mejor {server.get('best_time_minutes')} min  "
+                f"prom {server.get('avg_time_minutes')}  "
+                f"pasaron {server.get('passed_sessions', 0)}  "
+                f"cookies subidas {server.get('cookies_uploaded', 0)}/{server.get('total_sessions', 0)}"
+            )
+            for session in server.get('sessions') or []:
+                marca = 'cookie si' if session.get('cookies') else 'cookie no'
+                print(f"  sesion {session.get('id')}: {session.get('wait_time')} min ({session.get('status')}) {marca}")
         sys.exit(0)
 
     if args.status:

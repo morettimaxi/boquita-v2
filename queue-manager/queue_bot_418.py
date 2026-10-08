@@ -11,6 +11,10 @@ Uso:
     python queue_bot_418.py
 """
 import json
+import os
+import socket
+import threading
+import time
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -243,6 +247,72 @@ class Waf418SessionManager(queue_bot.SessionManager):
 
 queue_bot.SessionManager = Waf418SessionManager
 
+SERVER_NAME = os.environ.get('QUEUE_SERVER_NAME') or socket.gethostname()
+REPORT_EVERY_SECONDS = 120
+
+
+def _report_queue_once():
+    manager = queue_bot.session_manager
+    if not manager or not manager.sessions:
+        return
+    timed = [session for session in manager.sessions if session.get('wait_time') is not None]
+    if not timed:
+        return
+    stats = manager.get_stats()
+    passed = sum(
+        1 for session in manager.sessions
+        if session.get('captured_redirect_url') or session.get('cookies_uploaded') or session.get('waf418_uploaded')
+    )
+    uploaded = sum(
+        1 for session in manager.sessions
+        if session.get('cookies_uploaded') or session.get('waf418_uploaded')
+    )
+    sessions = [
+        {
+            'id': session.get('id'),
+            'wait_time': session.get('wait_time'),
+            'status': session.get('status') or '',
+            'cookies': bool(session.get('cookies_uploaded') or session.get('waf418_uploaded')),
+        }
+        for session in manager.sessions
+    ]
+    response = http_requests.post(
+        f'{queue_bot.WORKER_URL}/api/queue/heartbeat',
+        json={
+            'server_name': SERVER_NAME,
+            'best_time': stats.get('best_time'),
+            'avg_time': round(stats['avg_time'], 1) if stats.get('avg_time') is not None else None,
+            'active_sessions': stats.get('active_sessions', 0),
+            'total_sessions': stats.get('total_sessions', 0),
+            'passed_sessions': passed,
+            'cookies_uploaded': uploaded,
+            'opening_time': manager.opening_time,
+            'sessions': sessions,
+        },
+        headers={'X-API-Key': queue_bot.WORKER_API_KEY, 'Content-Type': 'application/json'},
+        timeout=10,
+    )
+    if not response.ok:
+        queue_bot.logger.warning(f'Fila {SERVER_NAME}: Worker HTTP {response.status_code}')
+        return
+    queue_bot.logger.info(
+        f'Fila {SERVER_NAME} reportada: mejor {stats.get("best_time")} min, '
+        f'{len(sessions)} sesiones, cookies subidas {uploaded}'
+    )
+
+
+def _report_loop():
+    while True:
+        time.sleep(20)
+        try:
+            _report_queue_once()
+        except Exception as error:
+            queue_bot.logger.warning(f'Fila {SERVER_NAME}: no pude reportar: {error}')
+        time.sleep(REPORT_EVERY_SECONDS)
+
+
+threading.Thread(target=_report_loop, daemon=True).start()
+
 
 if __name__ == '__main__':
     import sys
@@ -252,6 +322,8 @@ if __name__ == '__main__':
     print("Misma cola que queue_bot.py.")
     print("Si una sesion recibe 418 en bocasocios, sube cookies + localStorage + sessionStorage")
     print("a la cola aparte POST /api/waf418. /api/cookies/latest no se pisa.")
+    print(f"Nombre de este servidor: {SERVER_NAME}")
+    print("Cada 2 minutos, si ya hay tiempos, los sube al Worker.")
     print("Dashboard: http://localhost:5000")
     print("=" * 80)
     queue_bot.app.run(debug=False, host='0.0.0.0', port=5000)

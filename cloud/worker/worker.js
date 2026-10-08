@@ -455,31 +455,108 @@ async function handleGetStatus(env) {
   });
 }
 
-async function handleGetQueueStatus(env) {
-  const queueRaw = await env.COOKIES_KV.get('queue_status');
-  let queue = queueRaw ? JSON.parse(queueRaw) : null;
+const QUEUE_SERVERS_KEY = 'queue_servers';
+const QUEUE_SERVER_STALE_MS = 10 * 60 * 1000;
 
-  if (!queue) {
+async function loadQueueServers(env) {
+  try {
+    const raw = await env.COOKIES_KV.get(QUEUE_SERVERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function freshQueueServers(map) {
+  const now = Date.now();
+  const out = {};
+  for (const [name, item] of Object.entries(map || {})) {
+    if (!item || !item.updated_at) continue;
+    const age = now - new Date(item.updated_at).getTime();
+    if (Number.isFinite(age) && age >= 0 && age < QUEUE_SERVER_STALE_MS) out[name] = item;
+  }
+  return out;
+}
+
+function bestQueueServer(servers) {
+  let best = null;
+  for (const item of Object.values(servers)) {
+    if (item.best_time === null || item.best_time === undefined) continue;
+    if (!best || item.best_time < best.best_time) best = item;
+  }
+  return best;
+}
+
+function publicServer(item) {
+  const ageMs = Date.now() - new Date(item.updated_at).getTime();
+  const ageSeconds = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
+  return {
+    server_name: item.server_name,
+    best_time_minutes: item.best_time,
+    avg_time_minutes: item.avg_time,
+    active_sessions: item.active_sessions || 0,
+    total_sessions: item.total_sessions || 0,
+    passed_sessions: item.passed_sessions || 0,
+    cookies_uploaded: item.cookies_uploaded || 0,
+    sessions: Array.isArray(item.sessions) ? item.sessions : [],
+    age_seconds: ageSeconds,
+    online: ageSeconds !== null && ageSeconds < 300,
+    updated_at: item.updated_at,
+  };
+}
+
+async function handleGetQueueStatus(env) {
+  const serversMap = freshQueueServers(await loadQueueServers(env));
+  const servers = Object.values(serversMap)
+    .map(publicServer)
+    .sort((a, b) => {
+      if (a.best_time_minutes === null || a.best_time_minutes === undefined) return 1;
+      if (b.best_time_minutes === null || b.best_time_minutes === undefined) return -1;
+      return a.best_time_minutes - b.best_time_minutes;
+    });
+
+  if (!servers.length) {
+    const queueRaw = await env.COOKIES_KV.get('queue_status');
+    let queue = queueRaw ? JSON.parse(queueRaw) : null;
+    if (!queue) {
+      return json({
+        online: false,
+        message: 'No hay bot de cola reportando actualmente',
+        servers: [],
+      });
+    }
+    const qAgeMs = Date.now() - new Date(queue.updated_at).getTime();
+    queue.age_seconds = Math.max(0, Math.round(qAgeMs / 1000));
+    queue.online = queue.age_seconds < 300;
     return json({
-      online: false,
-      message: 'No hay bot de cola reportando actualmente',
-      queue: null,
+      online: queue.online,
+      best_time_minutes: queue.best_time,
+      avg_time_minutes: queue.avg_time,
+      active_sessions: queue.active_sessions,
+      total_sessions: queue.total_sessions,
+      passed_sessions: queue.passed_sessions,
+      cookies_uploaded: queue.cookies_uploaded || 0,
+      age_seconds: queue.age_seconds,
+      updated_at: queue.updated_at,
+      servers: [],
     });
   }
 
-  const qAgeMs = Date.now() - new Date(queue.updated_at).getTime();
-  queue.age_seconds = Math.max(0, Math.round(qAgeMs / 1000));
-  queue.online = queue.age_seconds < 180;
-
+  const best = servers.find((item) => item.best_time_minutes !== null && item.best_time_minutes !== undefined) || servers[0];
   return json({
-    online: queue.online,
-    best_time_minutes: queue.best_time,
-    avg_time_minutes: queue.avg_time,
-    active_sessions: queue.active_sessions,
-    total_sessions: queue.total_sessions,
-    passed_sessions: queue.passed_sessions,
-    age_seconds: queue.age_seconds,
-    updated_at: queue.updated_at,
+    online: servers.some((item) => item.online),
+    best_server: best.server_name,
+    best_time_minutes: best.best_time_minutes,
+    avg_time_minutes: best.avg_time_minutes,
+    active_sessions: best.active_sessions,
+    total_sessions: best.total_sessions,
+    passed_sessions: best.passed_sessions,
+    cookies_uploaded: servers.reduce((sum, item) => sum + (item.cookies_uploaded || 0), 0),
+    age_seconds: best.age_seconds,
+    updated_at: best.updated_at,
+    servers,
   });
 }
 
@@ -496,19 +573,36 @@ async function handleQueueHeartbeat(request, env) {
     return json({ error: 'Invalid JSON' }, 400);
   }
 
+  const sessions = (Array.isArray(body.sessions) ? body.sessions : [])
+    .slice(0, 100)
+    .map((item) => ({
+      id: item && item.id !== undefined ? item.id : null,
+      wait_time: item && item.wait_time !== undefined ? item.wait_time : null,
+      status: (item && item.status) || '',
+      cookies: !!(item && item.cookies),
+    }));
+
   const queueData = {
+    server_name: String(body.server_name || 'default').slice(0, 80),
     best_time: body.best_time !== undefined ? body.best_time : null,
     avg_time: body.avg_time !== undefined ? body.avg_time : null,
     active_sessions: body.active_sessions || 0,
     total_sessions: body.total_sessions || 0,
     passed_sessions: body.passed_sessions || 0,
+    cookies_uploaded: body.cookies_uploaded || 0,
     opening_time: body.opening_time || null,
+    sessions,
     updated_at: new Date().toISOString(),
   };
 
-  await env.COOKIES_KV.put('queue_status', JSON.stringify(queueData), { expirationTtl: 600 });
+  const servers = freshQueueServers(await loadQueueServers(env));
+  servers[queueData.server_name] = queueData;
+  await env.COOKIES_KV.put(QUEUE_SERVERS_KEY, JSON.stringify(servers));
 
-  return json({ ok: true, updated_at: queueData.updated_at });
+  const best = bestQueueServer(servers) || queueData;
+  await env.COOKIES_KV.put('queue_status', JSON.stringify(best), { expirationTtl: 600 });
+
+  return json({ ok: true, server_name: queueData.server_name, updated_at: queueData.updated_at });
 }
 
 function handleGoPage(code, env) {
