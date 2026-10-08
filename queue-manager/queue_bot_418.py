@@ -125,11 +125,15 @@ class Waf418SessionManager(queue_bot.SessionManager):
         for line in notable[:15]:
             queue_bot.logger.info(f'NET S{session["id"]} {line}')
 
+    def _redirect_rank(self, url):
+        if '/queueit/redirect' in url and 'queueittoken=' in url:
+            return 0
+        return 9
+
     def _catch_418(self, session, logs):
         if session.get('waf418_uploaded'):
             return
-        hit_url = None
-        hit_headers = {}
+        hits = []
         for log_entry in logs or []:
             try:
                 message = json.loads(log_entry.get('message') or '{}')
@@ -139,14 +143,20 @@ class Waf418SessionManager(queue_bot.SessionManager):
                 response = payload.get('params', {}).get('response', {})
                 url = response.get('url') or ''
                 if response.get('status') == 418 and 'bocajuniors' in url:
-                    hit_url = url
-                    hit_headers = response.get('headers') or {}
-                    break
+                    hits.append((url, response.get('headers') or {}))
             except Exception:
                 continue
-        if not hit_url:
+        if not hits:
             return
         session['waf418_seen'] = True
+        hits.sort(key=lambda item: self._redirect_rank(item[0]))
+        hit_url, hit_headers = hits[0]
+        if self._redirect_rank(hit_url) != 0:
+            queue_bot.logger.info(
+                f"418 sesion {session['id']}: vi {hit_url[:140]} y lo dejo. "
+                f"Espero /queueit/redirect?queueittoken="
+            )
+            return
         queue_bot.logger.info(f"418 en sesion {session['id']}: {hit_url[:180]}")
         self._upload_418(session, hit_url, hit_headers)
 
