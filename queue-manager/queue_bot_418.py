@@ -49,6 +49,7 @@ class Waf418SessionManager(queue_bot.SessionManager):
             def spy(kind, _original=original, _session=session):
                 logs = _original(kind)
                 if kind == 'performance':
+                    self._log_network(_session, logs)
                     self._catch_418(_session, logs)
                 return logs
 
@@ -59,6 +60,49 @@ class Waf418SessionManager(queue_bot.SessionManager):
         finally:
             for driver, original in wrapped:
                 driver.get_log = original
+
+    def _log_network(self, session, logs):
+        total = 0
+        errors = 0
+        n418 = 0
+        notable = []
+        for log_entry in logs or []:
+            try:
+                message = json.loads(log_entry.get('message') or '{}')
+                payload = message.get('message', {})
+                if payload.get('method') != 'Network.responseReceived':
+                    continue
+                response = payload.get('params', {}).get('response', {})
+                url = response.get('url') or ''
+                if not url or url.startswith('data:'):
+                    continue
+                if 'bocajuniors' not in url and 'queue-it' not in url:
+                    continue
+                status = response.get('status')
+                total += 1
+                if status == 418:
+                    n418 += 1
+                if isinstance(status, int) and status >= 400:
+                    errors += 1
+                interesting = (
+                    status == 418
+                    or (isinstance(status, int) and status >= 400)
+                    or status in (301, 302, 303, 307, 308)
+                    or 'queueittoken' in url
+                    or '/queueit/redirect' in url
+                    or '/queueit/validate' in url
+                )
+                if interesting:
+                    notable.append(f'{status} {url[:140]}')
+            except Exception:
+                continue
+        if total == 0 and not notable:
+            return
+        queue_bot.logger.info(
+            f'NET S{session["id"]}: {total} respuestas boca/queue, 418={n418}, errores={errors}'
+        )
+        for line in notable[:15]:
+            queue_bot.logger.info(f'NET S{session["id"]} {line}')
 
     def _catch_418(self, session, logs):
         if session.get('waf418_uploaded'):
@@ -394,6 +438,7 @@ if __name__ == '__main__':
     print(f"Nombre de este servidor: {SERVER_NAME}")
     print("Cada 2 minutos refresca la pagina, lee el tiempo real y lo sube al Worker.")
     print("Avisa en el log cuando intenta subir un 418 o las cookies finales.")
+    print("Muestra las respuestas de red de Boca y Queue-it (status, 418, redirects).")
     print("Dashboard: http://localhost:5000")
     print("=" * 80)
     queue_bot.app.run(debug=False, host='0.0.0.0', port=5000)
