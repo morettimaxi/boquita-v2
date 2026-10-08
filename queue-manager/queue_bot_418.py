@@ -11,6 +11,7 @@ Uso:
     python queue_bot_418.py
 """
 import json
+import logging
 import os
 import socket
 import threading
@@ -21,6 +22,12 @@ from urllib.parse import urlparse
 import requests as http_requests
 
 import queue_bot
+
+class _SinLogsNet(logging.Filter):
+    def filter(self, record):
+        return '[NET]' not in record.getMessage()
+
+queue_bot.logger.addFilter(_SinLogsNet())
 
 STORAGE_ORIGINS = (
     'https://bocasocios.bocajuniors.com.ar',
@@ -267,15 +274,7 @@ def _report_queue_once():
         1 for session in manager.sessions
         if session.get('cookies_uploaded') or session.get('waf418_uploaded')
     )
-    sessions = [
-        {
-            'id': session.get('id'),
-            'wait_time': session.get('wait_time'),
-            'status': session.get('status') or '',
-            'cookies': bool(session.get('cookies_uploaded') or session.get('waf418_uploaded')),
-        }
-        for session in manager.sessions
-    ]
+    total = len(manager.sessions)
     response = http_requests.post(
         f'{queue_bot.WORKER_URL}/api/queue/heartbeat',
         json={
@@ -283,11 +282,10 @@ def _report_queue_once():
             'best_time': stats.get('best_time'),
             'avg_time': round(stats['avg_time'], 1) if stats.get('avg_time') is not None else None,
             'active_sessions': stats.get('active_sessions', 0),
-            'total_sessions': stats.get('total_sessions', 0),
+            'total_sessions': total,
             'passed_sessions': passed,
             'cookies_uploaded': uploaded,
             'opening_time': manager.opening_time,
-            'sessions': sessions,
         },
         headers={'X-API-Key': queue_bot.WORKER_API_KEY, 'Content-Type': 'application/json'},
         timeout=10,
@@ -296,8 +294,8 @@ def _report_queue_once():
         queue_bot.logger.warning(f'Fila {SERVER_NAME}: Worker HTTP {response.status_code}')
         return
     queue_bot.logger.info(
-        f'Fila {SERVER_NAME} reportada: mejor {stats.get("best_time")} min, '
-        f'{len(sessions)} sesiones, cookies subidas {uploaded}'
+        f'Fila {SERVER_NAME} -> Worker: mejor {stats.get("best_time")} min, '
+        f'{total} sesiones, cookies subidas {uploaded}'
     )
 
 
