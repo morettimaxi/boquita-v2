@@ -70,15 +70,32 @@ class Waf418SessionManager(queue_bot.SessionManager):
             try:
                 message = json.loads(log_entry.get('message') or '{}')
                 payload = message.get('message', {})
-                if payload.get('method') != 'Network.responseReceived':
+                method = payload.get('method')
+                params = payload.get('params', {})
+                if method == 'Network.requestWillBeSent':
+                    req_url = (params.get('request') or {}).get('url') or ''
+                    if 'bocasocios-gw.bocajuniors.com.ar' in req_url:
+                        queue_bot.logger.info('=' * 70)
+                        queue_bot.logger.info(
+                            f'GATEWAY S{session["id"]} pidio el dominio, todavia sin status'
+                        )
+                        queue_bot.logger.info(req_url)
+                        queue_bot.logger.info('=' * 70)
                     continue
-                response = payload.get('params', {}).get('response', {})
+                if method != 'Network.responseReceived':
+                    continue
+                response = params.get('response', {})
                 url = response.get('url') or ''
                 if not url or url.startswith('data:'):
                     continue
                 if 'bocajuniors' not in url and 'queue-it' not in url:
                     continue
                 status = response.get('status')
+                if 'bocasocios-gw.bocajuniors.com.ar' in url:
+                    queue_bot.logger.info('=' * 70)
+                    queue_bot.logger.info(f'GATEWAY S{session["id"]} status {status}')
+                    queue_bot.logger.info(url)
+                    queue_bot.logger.info('=' * 70)
                 total += 1
                 if status == 418:
                     n418 += 1
