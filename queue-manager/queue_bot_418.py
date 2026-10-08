@@ -61,6 +61,10 @@ class Waf418SessionManager(queue_bot.SessionManager):
             for driver, original in wrapped:
                 driver.get_log = original
 
+    def _is_gateway(self, url):
+        host = (urlparse(url or '').hostname or '').lower()
+        return host == 'bocasocios-gw.bocajuniors.com.ar'
+
     def _log_network(self, session, logs):
         total = 0
         errors = 0
@@ -74,7 +78,7 @@ class Waf418SessionManager(queue_bot.SessionManager):
                 params = payload.get('params', {})
                 if method == 'Network.requestWillBeSent':
                     req_url = (params.get('request') or {}).get('url') or ''
-                    if 'bocasocios-gw.bocajuniors.com.ar' in req_url:
+                    if self._is_gateway(req_url):
                         queue_bot.logger.info('=' * 70)
                         queue_bot.logger.info(
                             f'GATEWAY S{session["id"]} pidio el dominio, todavia sin status'
@@ -91,7 +95,7 @@ class Waf418SessionManager(queue_bot.SessionManager):
                 if 'bocajuniors' not in url and 'queue-it' not in url:
                     continue
                 status = response.get('status')
-                if 'bocasocios-gw.bocajuniors.com.ar' in url:
+                if self._is_gateway(url):
                     queue_bot.logger.info('=' * 70)
                     queue_bot.logger.info(f'GATEWAY S{session["id"]} status {status}')
                     queue_bot.logger.info(url)
