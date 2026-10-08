@@ -33,6 +33,15 @@ export default {
       return handleGetLatest(request, env);
     }
 
+    if (path === '/api/cookies/history' && request.method === 'GET') {
+      return handleGetHistory(request, env);
+    }
+
+    const histItem = path.match(/^\/api\/cookies\/history\/([a-z0-9-]{4,80})$/i);
+    if (histItem && request.method === 'GET') {
+      return handleGetHistoryItem(request, env, histItem[1]);
+    }
+
     if (path === '/api/cookies/status' && request.method === 'GET') {
       return handleGetStatus(env);
     }
@@ -49,6 +58,11 @@ export default {
       const apiKey = request.headers.get('X-API-Key');
       if (apiKey !== env.API_KEY) return json({ error: 'Unauthorized' }, 401);
       await env.COOKIES_KV.delete('latest');
+      try {
+        await clearHistory(env);
+      } catch {
+        // latest ya se borro; el historial no puede tumbar el clear
+      }
       return json({ ok: true, message: 'Cookies borradas' });
     }
 
@@ -124,12 +138,140 @@ async function handlePost(request, env) {
 
   await env.COOKIES_KV.put('latest', JSON.stringify(data));
 
+  let historyOk = false;
+  let historyId = null;
+  try {
+    historyId = await rememberHistory(env, data);
+    historyOk = true;
+    try {
+      await env.COOKIES_KV.put('latest', JSON.stringify(data));
+    } catch {
+      // latest ya quedo guardado arriba
+    }
+  } catch {
+    historyOk = false;
+  }
+
   return json({
     ok: true,
     critical_count: critical.length,
     total_count: cookies.length,
     updated_at: data.updated_at,
+    history: historyOk,
+    id: historyId,
   });
+}
+
+const MAX_HISTORY = 10;
+const HISTORY_INDEX = 'cookie_history';
+
+async function rememberHistory(env, data) {
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  data.id = id;
+  await env.COOKIES_KV.put(`cookie:${id}`, JSON.stringify(data));
+
+  let index = [];
+  try {
+    const raw = await env.COOKIES_KV.get(HISTORY_INDEX);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) index = parsed;
+    }
+  } catch {
+    index = [];
+  }
+
+  index = index.filter((item) => item && item.id && item.id !== id);
+  index.unshift({
+    id,
+    updated_at: data.updated_at,
+    source: data.source,
+    evento: data.evento,
+    critical_count: (data.critical_cookies || []).length,
+    total_count: (data.cookies || []).length,
+  });
+  const dropped = index.slice(MAX_HISTORY);
+  index = index.slice(0, MAX_HISTORY);
+  await env.COOKIES_KV.put(HISTORY_INDEX, JSON.stringify(index));
+  for (const old of dropped) {
+    try {
+      if (old && old.id) await env.COOKIES_KV.delete(`cookie:${old.id}`);
+    } catch {
+      // un juego viejo huerfano no bloquea los nuevos
+    }
+  }
+  return id;
+}
+
+async function clearHistory(env) {
+  const raw = await env.COOKIES_KV.get(HISTORY_INDEX);
+  let index = [];
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) index = parsed;
+  }
+  for (const item of index) {
+    if (item && item.id) {
+      try {
+        await env.COOKIES_KV.delete(`cookie:${item.id}`);
+      } catch {
+        // seguir con el resto
+      }
+    }
+  }
+  await env.COOKIES_KV.delete(HISTORY_INDEX);
+}
+
+function authorizeRead(request) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code') || request.headers.get('X-Access-Code');
+  return code;
+}
+
+async function handleGetHistory(request, env) {
+  const code = authorizeRead(request);
+  if (!code || code !== env.ACCESS_CODE) {
+    return json({ error: 'Codigo de acceso invalido' }, 403);
+  }
+
+  let index = [];
+  try {
+    const raw = await env.COOKIES_KV.get(HISTORY_INDEX);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) index = parsed;
+    }
+  } catch {
+    return json({ sets: [], history_ok: false });
+  }
+
+  const sets = index.map((item) => {
+    const ageMs = Date.now() - new Date(item.updated_at).getTime();
+    const ageMinutes = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 60000)) : null;
+    return {
+      ...item,
+      age_minutes: ageMinutes,
+      stale: ageMinutes !== null && ageMinutes >= 60,
+    };
+  });
+  return json({ sets, history_ok: true });
+}
+
+async function handleGetHistoryItem(request, env, id) {
+  const code = authorizeRead(request);
+  if (!code || code !== env.ACCESS_CODE) {
+    return json({ error: 'Codigo de acceso invalido' }, 403);
+  }
+
+  const raw = await env.COOKIES_KV.get(`cookie:${id}`);
+  if (!raw) {
+    return json({ error: 'No esta ese juego de cookies' }, 404);
+  }
+  try {
+    return json(JSON.parse(raw));
+  } catch {
+    return json({ error: 'Juego de cookies ilegible' }, 500);
+  }
 }
 
 async function handleGetLatest(request, env) {

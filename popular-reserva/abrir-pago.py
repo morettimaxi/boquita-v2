@@ -19,8 +19,22 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+
+def retry_stale(action, attempts=5, delay=0.25):
+    """Reintenta una acción volviendo a localizar elementos reemplazados por React."""
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            return action()
+        except StaleElementReferenceException as error:
+            last_error = error
+            if attempt < attempts - 1:
+                time.sleep(delay)
+    raise last_error
 
 
 def find_latest_cookies(cookie_file=None):
@@ -105,22 +119,30 @@ def open_and_login(email, password, cookies, evento, index=0):
     driver.get('https://bocasocios.bocajuniors.com.ar/auth/login')
     
     try:
-        wait = WebDriverWait(driver, 10)
-        
-        email_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="email"], input[placeholder*="correo"], input[name="email"]')))
-        email_input.clear()
-        email_input.send_keys(email)
-        
-        time.sleep(0.5)
-        
-        pass_input = driver.find_element(By.CSS_SELECTOR, 'input[type="password"]')
-        pass_input.clear()
-        pass_input.send_keys(password)
-        
-        time.sleep(0.5)
-        
-        login_btn = driver.find_element(By.XPATH, '//button[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"iniciar") or contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"sesión") or contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"login")]')
-        login_btn.click()
+        wait = WebDriverWait(driver, 15)
+        email_locator = (
+            By.CSS_SELECTOR,
+            'input[type="email"], input[placeholder*="correo"], input[name="email"]',
+        )
+        password_locator = (By.CSS_SELECTOR, 'input[type="password"]')
+        button_locator = (
+            By.XPATH,
+            '//button[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"iniciar") or contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"sesión") or contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"login")]',
+        )
+
+        def fill(locator, value):
+            def action():
+                element = wait.until(EC.element_to_be_clickable(locator))
+                element.clear()
+                element.send_keys(value)
+            retry_stale(action)
+
+        fill(email_locator, email)
+        fill(password_locator, password)
+
+        retry_stale(
+            lambda: wait.until(EC.element_to_be_clickable(button_locator)).click()
+        )
         
         print(f"[{index}] Login enviado para {email}")
         

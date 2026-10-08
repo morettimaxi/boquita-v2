@@ -5,6 +5,9 @@ Uso:
   python adicional_copa.py --evento 869
   python adicional_copa.py --evento 869 --dry-run
 
+Lanza las cuentas espaciadas para que la corrida dure entre 3:30 y 4:00.
+Si una falla, sigue con la siguiente y al final imprime el reporte.
+
 Parámetros:
   --evento      ID del evento (eventoNid)
   --mode        Modo de operacion: "adicional" (default) o "confirmacion"
@@ -14,7 +17,7 @@ Parámetros:
                 Si no se pasa, busca session_*_cookies.json o boca_cookies*.json (tambien en Downloads)
   --csv         Archivo CSV con credenciales (default: socios.csv) - columnas: email,password
   --dry-run     No ejecutar, solo mostrar qué haría
-  --workers     Cantidad de procesos paralelos (default: 5)
+  --workers     Procesos en paralelo (0 = las que hagan falta para el intervalo)
 """
 
 import requests
@@ -28,7 +31,7 @@ import argparse
 import logging
 import glob
 from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, wait
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
@@ -58,6 +61,7 @@ HEADERS_BASE = {
 }
 
 STATUS_FILE = 'order_status.json'
+TARGET_LAST_START_SECONDS = 210
 
 
 def load_status():
@@ -365,8 +369,8 @@ def pay_adicional_efectivo(token, evento_nid, cookie_string=None):
 
 
 def do_order_adicional(token, socio_nid, evento_nid,
-                       cookie_string=None, cookie_file=None, max_retries=50, retry_wait=20):
-    """POST /event/v2/buy/additional/order - para adicionales/adherentes (popus)."""
+                       cookie_string=None, cookie_file=None, max_retries=1, retry_wait=0):
+    """POST /event/v2/buy/additional/order. Un intento: si falla, no retiene a las demas."""
     headers = {
         **HEADERS_BASE,
         'Authorization': f'Bearer {token}'
@@ -375,7 +379,7 @@ def do_order_adicional(token, socio_nid, evento_nid,
         headers['Cookie'] = cookie_string
 
     tipo_nid = get_adicional_tipo(token, evento_nid, cookie_string) or '-2'
-    
+
     body = {
         'eventoNid': evento_nid,
         'adicionalTipoNid': tipo_nid,
@@ -383,65 +387,42 @@ def do_order_adicional(token, socio_nid, evento_nid,
         'tieneAbonoDiscapacitado': False
     }
 
-    last_cookie_mtime = 0
-    
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = requests.post(
-                f'{BASE_URL}/event/v2/buy/additional/order',
-                json=body,
-                headers=headers,
-                timeout=15
-            )
-            
-            if resp.status_code in (200, 201):
-                logger.info(f"ORDER OK: socioNid={socio_nid} -> {resp.status_code} (intento {attempt})")
-                pay = pay_adicional_efectivo(token, evento_nid, cookie_string)
-                return {
-                    'success': True,
-                    'socio_nid': socio_nid,
-                    'status': resp.status_code,
-                    'data': resp.text[:300],
-                    'attempts': attempt,
-                    'pay': pay,
-                }
-            
-            resp_text = resp.text[:300]
-            
-            if 'Ya compraste' in resp_text or 'en proceso de pago' in resp_text:
-                logger.info(f"ORDER: socioNid={socio_nid} -> {resp_text[:100]}. No reintenta.")
-                return {'success': True, 'socio_nid': socio_nid, 'status': resp.status_code, 'data': resp_text, 'attempts': attempt, 'already': True}
-            
-            if resp.status_code == 403:
-                logger.warning(f"ORDER 403: socioNid={socio_nid} -> Cola de vuelta. Esperando 60s... (intento {attempt})")
-                time.sleep(60)
-                new_cookies, last_cookie_mtime = reload_cookies_if_newer(cookie_file, last_cookie_mtime)
-                if new_cookies:
-                    cookie_string = new_cookies
-                    headers['Cookie'] = cookie_string
-                    logger.info(f"Cookies actualizadas para socioNid={socio_nid}")
-                continue
-            
-            if resp.status_code == 401:
-                logger.warning(f"ORDER 401: socioNid={socio_nid} -> Token expirado. Esperando 60s... (intento {attempt})")
-                time.sleep(60)
-                continue
-            
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> HTTP {resp.status_code}: {resp.text[:200]}")
-        
-        except requests.exceptions.Timeout:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> TIMEOUT")
-        except requests.exceptions.ConnectionError:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> CONNECTION ERROR")
-        except Exception as e:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> {e}")
-        
-        if attempt < max_retries:
-            logger.info(f"Reintentando en {retry_wait}s... (socioNid={socio_nid})")
-            time.sleep(retry_wait)
-    
-    logger.error(f"ORDER AGOTADO: socioNid={socio_nid} -> {max_retries} intentos fallidos")
-    return {'success': False, 'socio_nid': socio_nid, 'error': f'Agotados {max_retries} intentos'}
+    try:
+        resp = requests.post(
+            f'{BASE_URL}/event/v2/buy/additional/order',
+            json=body,
+            headers=headers,
+            timeout=12
+        )
+
+        if resp.status_code in (200, 201):
+            logger.info(f"ORDER OK: socioNid={socio_nid} -> {resp.status_code}")
+            pay = pay_adicional_efectivo(token, evento_nid, cookie_string)
+            return {
+                'success': True,
+                'socio_nid': socio_nid,
+                'status': resp.status_code,
+                'data': resp.text[:300],
+                'attempts': 1,
+                'pay': pay,
+            }
+
+        resp_text = resp.text[:300]
+        if 'Ya compraste' in resp_text or 'en proceso de pago' in resp_text:
+            logger.info(f"ORDER: socioNid={socio_nid} -> {resp_text[:100]}. No reintenta.")
+            return {'success': True, 'socio_nid': socio_nid, 'status': resp.status_code, 'data': resp_text, 'attempts': 1, 'already': True}
+
+        logger.warning(f"ORDER socioNid={socio_nid} -> HTTP {resp.status_code}: {resp.text[:200]}")
+        return {'success': False, 'socio_nid': socio_nid, 'status': resp.status_code, 'error': resp.text[:200], 'attempts': 1}
+    except requests.exceptions.Timeout:
+        logger.warning(f"ORDER socioNid={socio_nid} -> TIMEOUT")
+        return {'success': False, 'socio_nid': socio_nid, 'error': 'TIMEOUT', 'attempts': 1}
+    except requests.exceptions.ConnectionError:
+        logger.warning(f"ORDER socioNid={socio_nid} -> CONNECTION ERROR")
+        return {'success': False, 'socio_nid': socio_nid, 'error': 'CONNECTION ERROR', 'attempts': 1}
+    except Exception as e:
+        logger.warning(f"ORDER socioNid={socio_nid} -> {e}")
+        return {'success': False, 'socio_nid': socio_nid, 'error': str(e), 'attempts': 1}
 
 
 def do_order_confirmacion(token, socio_nid, evento_nid, seccion_nid, confirmacion_tipo,
@@ -481,36 +462,20 @@ def do_order_confirmacion(token, socio_nid, evento_nid, seccion_nid, confirmacio
                 logger.info(f"ORDER OK: socioNid={socio_nid} -> {resp.status_code} (intento {attempt})")
                 return {'success': True, 'socio_nid': socio_nid, 'status': resp.status_code, 'data': resp.text[:300], 'attempts': attempt}
             
-            if resp.status_code == 403:
-                logger.warning(f"ORDER 403: socioNid={socio_nid} -> Cola de vuelta. Esperando 60s... (intento {attempt})")
-                time.sleep(60)
-                new_cookies, last_cookie_mtime = reload_cookies_if_newer(cookie_file, last_cookie_mtime)
-                if new_cookies:
-                    cookie_string = new_cookies
-                    headers['Cookie'] = cookie_string
-                    logger.info(f"Cookies actualizadas para socioNid={socio_nid}")
-                continue
-            
-            if resp.status_code == 401:
-                logger.warning(f"ORDER 401: socioNid={socio_nid} -> Token expirado. Esperando 60s... (intento {attempt})")
-                time.sleep(60)
-                continue
-            
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> HTTP {resp.status_code}: {resp.text[:200]}")
+            logger.warning(f"ORDER socioNid={socio_nid} -> HTTP {resp.status_code}: {resp.text[:200]}")
+            return {'success': False, 'socio_nid': socio_nid, 'status': resp.status_code, 'error': resp.text[:200], 'attempts': attempt}
         
         except requests.exceptions.Timeout:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> TIMEOUT")
+            logger.warning(f"ORDER socioNid={socio_nid} -> TIMEOUT")
+            return {'success': False, 'socio_nid': socio_nid, 'error': 'TIMEOUT', 'attempts': attempt}
         except requests.exceptions.ConnectionError:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> CONNECTION ERROR")
+            logger.warning(f"ORDER socioNid={socio_nid} -> CONNECTION ERROR")
+            return {'success': False, 'socio_nid': socio_nid, 'error': 'CONNECTION ERROR', 'attempts': attempt}
         except Exception as e:
-            logger.warning(f"ORDER intento {attempt}/{max_retries}: socioNid={socio_nid} -> {e}")
-        
-        if attempt < max_retries:
-            logger.info(f"Reintentando en {retry_wait}s... (socioNid={socio_nid})")
-            time.sleep(retry_wait)
+            logger.warning(f"ORDER socioNid={socio_nid} -> {e}")
+            return {'success': False, 'socio_nid': socio_nid, 'error': str(e), 'attempts': attempt}
     
-    logger.error(f"ORDER AGOTADO: socioNid={socio_nid} -> {max_retries} intentos fallidos")
-    return {'success': False, 'socio_nid': socio_nid, 'error': f'Agotados {max_retries} intentos'}
+    return {'success': False, 'socio_nid': socio_nid, 'error': 'sin respuesta'}
 
 
 def process_socio(socio, evento_nid, mode, cookie_string, cookie_file, dry_run):
@@ -599,6 +564,11 @@ def process_socio(socio, evento_nid, mode, cookie_string, cookie_file, dry_run):
         order_error=order_result.get('error', '')
     )
     
+    pay = order_result.get('pay') if isinstance(order_result.get('pay'), dict) else None
+    error = order_result.get('error', '')
+    if pay and not pay.get('success') and not error:
+        error = pay.get('error', '')
+
     return {
         'email': email,
         'nombre': nombre,
@@ -607,8 +577,11 @@ def process_socio(socio, evento_nid, mode, cookie_string, cookie_file, dry_run):
         'login': True,
         'order': order_result['success'],
         'order_status': order_result.get('status'),
-        'order_data': order_result.get('data', order_result.get('error', '')),
-        'attempts': order_result.get('attempts')
+        'order_data': order_result.get('data', error),
+        'attempts': order_result.get('attempts'),
+        'pay': pay,
+        'error': error,
+        'already': order_result.get('already', False),
     }
 
 
@@ -620,81 +593,109 @@ def main():
     parser.add_argument('--cookies', type=str, default=None, help='Archivo JSON con cookies')
     parser.add_argument('--csv', type=str, default='socios.csv', help='CSV con email,password')
     parser.add_argument('--dry-run', action='store_true', help='No ejecutar, solo login')
-    parser.add_argument('--workers', type=int, default=5, help='Procesos paralelos (default: 5)')
+    parser.add_argument('--workers', type=int, default=0,
+                        help='Procesos en paralelo (0 = las que hagan falta para el intervalo)')
     args = parser.parse_args()
-    
+
     print("=" * 70)
-    print("ORDER POPU - Boca Juniors")
+    print("ADICIONAL COPA")
     print("=" * 70)
     print(f"Evento: {args.evento}")
     print(f"Modo: {args.mode}")
     if args.mode == 'adicional':
-        print(f"  -> POST /event/v2/buy/additional/order")
+        print("  -> POST /event/v2/buy/additional/order + pago efectivo")
     else:
-        print(f"  -> POST /event/confirmation/order (con seccion)")
+        print("  -> POST /event/confirmation/order (con seccion)")
     print(f"CSV: {args.csv}")
-    print(f"Workers: {args.workers}")
     print(f"Dry-run: {args.dry_run}")
-    print(f"Estado: {STATUS_FILE}")
+    print("Duracion estimada: entre 3:30 y 4:00, un intento por cuenta")
     print("=" * 70)
-    
+
     cookie_string = load_cookies(args.cookies)
-    
+
     socios = load_socios(args.csv)
     if not socios:
         logger.error("No hay socios para procesar. Crea socios.csv con columnas: email,password")
         sys.exit(1)
-    
+
+    workers = args.workers if args.workers > 0 else len(socios)
+    gaps = max(len(socios) - 1, 1)
+    gap = TARGET_LAST_START_SECONDS / gaps
+    print(
+        f"\nProcesando {len(socios)} socios, una cada {gap:.1f}s. "
+        f"La ultima sale cerca de los 3:30. No corta: espera a que terminen todas.\n"
+    )
+
     if os.path.exists(STATUS_FILE):
         os.remove(STATUS_FILE)
-    
-    print(f"\nProcesando {len(socios)} socios con {args.workers} workers...\n")
-    
-    results = []
-    
-    with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        futures = {}
+
+    started = time.monotonic()
+    by_email = {}
+    executor = ProcessPoolExecutor(max_workers=workers)
+    futures = {}
+    try:
         for i, socio in enumerate(socios):
             if i > 0:
-                delay = 2 + (i * 1.5)
-                logger.info(f"Esperando {delay:.1f}s antes de lanzar {socio['email']}...")
-                time.sleep(delay)
+                logger.info(f"Proxima en {gap:.1f}s: {socio['email']}")
+                time.sleep(gap)
             future = executor.submit(process_socio, socio, args.evento, args.mode,
                                      cookie_string, args.cookies, args.dry_run)
             futures[future] = socio['email']
-        
-        for future in as_completed(futures):
+
+        done, _pending = wait(set(futures))
+        for future in done:
             email = futures[future]
             try:
-                result = future.result()
-                results.append(result)
+                by_email[email] = future.result()
             except Exception as e:
                 logger.error(f"Error procesando {email}: {e}")
-                results.append({'email': email, 'login': False, 'order': False, 'error': str(e)})
-    
+                by_email[email] = {'email': email, 'login': False, 'order': False, 'error': str(e)}
+    finally:
+        executor.shutdown(wait=True)
+
+    results = []
+    for socio in socios:
+        results.append(by_email.get(socio['email'], {
+            'email': socio['email'], 'login': False, 'order': False, 'error': 'sin resultado'
+        }))
+
+    elapsed = time.monotonic() - started
+
+    def estado(r):
+        if r.get('order') == 'dry-run':
+            return 'DRY-RUN'
+        if not r.get('login') or r.get('order') is not True:
+            return 'FAIL'
+        pay = r.get('pay')
+        if isinstance(pay, dict) and not pay.get('success'):
+            return 'PAY FAIL'
+        if r.get('already'):
+            return 'YA TENIA'
+        return 'OK'
+
     print("\n" + "=" * 70)
-    print("RESUMEN")
+    print("REPORTE")
     print("=" * 70)
-    
-    login_ok = sum(1 for r in results if r.get('login'))
-    order_ok = sum(1 for r in results if r.get('order') == True)
-    order_fail = sum(1 for r in results if r.get('order') == False)
-    
-    print(f"Total socios: {len(results)}")
-    print(f"Login exitoso: {login_ok}")
-    print(f"Order exitoso: {order_ok}")
-    print(f"Order fallido: {order_fail}")
-    
+    print(f"Tiempo: {elapsed:.0f}s")
+    print(f"Total: {len(results)}")
+    print(f"OK: {sum(1 for r in results if estado(r) == 'OK')}")
+    print(f"Ya tenia: {sum(1 for r in results if estado(r) == 'YA TENIA')}")
+    print(f"Pago fallido: {sum(1 for r in results if estado(r) == 'PAY FAIL')}")
+    print(f"Fallaron: {sum(1 for r in results if estado(r) == 'FAIL')}")
     if args.dry_run:
         print("(Dry-run: no se ejecutaron orders)")
-    
+
     print("\nDetalle:")
     for r in results:
-        st = "OK" if r.get('order') == True else ("DRY-RUN" if r.get('order') == 'dry-run' else "FAIL")
+        st = estado(r)
         nombre = r.get('nombre', '')
-        error = f" - {r['error']}" if r.get('error') else ''
-        print(f"  [{st}] {r['email']} {nombre}{error}")
-    
+        error = r.get('error') or ''
+        pay = r.get('pay')
+        if st == 'PAY FAIL' and isinstance(pay, dict) and pay.get('error'):
+            error = pay.get('error')
+        extra = f" - {error}" if error and st != 'OK' else ''
+        print(f"  [{st}] {r['email']} {nombre}{extra}")
+
     result_file = f"order_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(result_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, ensure_ascii=False)

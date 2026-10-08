@@ -16,18 +16,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 BOCA_URL = 'https://bocasocios.bocajuniors.com.ar'
-
-
-def _read_worker_key():
-    key = os.environ.get('WORKER_API_KEY', '').strip()
-    if key or os.name != 'nt':
-        return key
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
-            return str(winreg.QueryValueEx(k, 'WORKER_API_KEY')[0]).strip()
-    except OSError:
-        return ''
+WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
+WORKER_API_KEY = '6HHGGVfCch0U80-3kfBZS5e8EbmeiEKE5kTea8FWn1o'
 
 
 def main():
@@ -141,7 +131,7 @@ def main():
                 'source': 'capture-browser-manual',
                 'active': True,
             }
-            api_key = _read_worker_key()
+            api_key = WORKER_API_KEY
             resp = requests.post(
                 'https://boca-cookies.rosaleseze86.workers.dev/api/cookies',
                 json=payload,

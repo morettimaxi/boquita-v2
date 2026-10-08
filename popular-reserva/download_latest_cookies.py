@@ -7,6 +7,8 @@ Uso:
     python download_latest_cookies.py --token Cangele2015
     python download_latest_cookies.py --output boca_cookies_worker.json
     python download_latest_cookies.py --status
+    python download_latest_cookies.py --list
+    python download_latest_cookies.py --id ID_DEL_JUEGO
 """
 import argparse
 from datetime import datetime, timezone
@@ -19,6 +21,7 @@ import requests
 
 DEFAULT_WORKER_URL = 'https://boca-cookies.rosaleseze86.workers.dev'
 DEFAULT_ACCESS_CODE = 'Cangele2015'
+MAX_AGE_MINUTES = 60
 
 
 def _read_env_or_reg(var_name: str, fallback: str = '') -> str:
@@ -59,20 +62,58 @@ def check_queue_status(worker_url: str):
     return None
 
 
-def download_cookies(worker_url: str, code: str, api_key: str, output_path: str, force: bool = False):
+def _auth(code: str, api_key: str):
     headers = {}
-    if code:
-        headers['X-Access-Code'] = code
-    if api_key:
-        headers['X-API-Key'] = api_key
-
     params = {}
     if code:
+        headers['X-Access-Code'] = code
         params['code'] = code
+    if api_key:
+        headers['X-API-Key'] = api_key
+    return headers, params
 
-    print(f"Consultando worker: {worker_url}/api/cookies/latest ...")
+
+def list_history(worker_url: str, code: str, api_key: str):
+    headers, params = _auth(code, api_key)
+    print(f"Consultando historial: {worker_url}/api/cookies/history ...")
     try:
-        resp = requests.get(f'{worker_url}/api/cookies/latest', headers=headers, params=params, timeout=15)
+        resp = requests.get(f'{worker_url}/api/cookies/history', headers=headers, params=params, timeout=15)
+    except Exception as e:
+        print(f"WARN: historial no disponible ({e}). La ultima sigue en /api/cookies/latest.")
+        return False
+    if resp.status_code == 404:
+        print("El worker todavia no publica historial. Podes bajar la ultima con el comando de siempre.")
+        return False
+    if not resp.ok:
+        print(f"WARN: historial HTTP {resp.status_code}. La ultima sigue en /api/cookies/latest.")
+        return False
+    try:
+        sets = resp.json().get('sets') or []
+    except Exception as e:
+        print(f"WARN: historial ilegible ({e}).")
+        return False
+    if not sets:
+        print("Historial vacio. Todavia no entro ningun juego ademas de latest, o el worker es viejo.")
+        return True
+    print(f"\n{len(sets)} juego(s) guardados (maximo 10, no se bajan si tienen {MAX_AGE_MINUTES} min o mas):")
+    for item in sets:
+        mark = 'VENCIDA' if item.get('stale') else 'VIGENTE'
+        print(
+            f"  [{mark}] {item.get('id')} | {item.get('source') or '?'} | "
+            f"hace {item.get('age_minutes')} min | criticas={item.get('critical_count')}"
+        )
+    print("\nBajar una vigente:")
+    print("  python download_latest_cookies.py --id ID")
+    return True
+
+
+def download_cookies(worker_url: str, code: str, api_key: str, output_path: str, force: bool = False, item_id: str = None):
+    headers, params = _auth(code, api_key)
+    target = f'{worker_url}/api/cookies/history/{item_id}' if item_id else f'{worker_url}/api/cookies/latest'
+
+    print(f"Consultando worker: {target} ...")
+    try:
+        resp = requests.get(target, headers=headers, params=params, timeout=15)
     except Exception as e:
         print(f"ERROR conectando al worker: {e}")
         return False
@@ -82,8 +123,12 @@ def download_cookies(worker_url: str, code: str, api_key: str, output_path: str,
         print(f"Pasa el token con --token TU_CODIGO o configura setx WORKER_ACCESS_CODE \"...\"")
         return False
     elif resp.status_code == 404:
-        print(f"ERROR: No hay cookies guardadas en el worker todavia (HTTP 404).")
-        print(f"Ejecuta primero el queue_bot o un upload.")
+        if item_id:
+            print(f"ERROR: no esta el juego {item_id} (HTTP 404).")
+            print("Mira los ids con: python download_latest_cookies.py --list")
+        else:
+            print(f"ERROR: No hay cookies guardadas en el worker todavia (HTTP 404).")
+            print(f"Ejecuta primero el queue_bot o un upload.")
         return False
     elif not resp.ok:
         print(f"ERROR HTTP {resp.status_code}: {resp.text}")
@@ -139,10 +184,11 @@ def download_cookies(worker_url: str, code: str, api_key: str, output_path: str,
     print(f"  Tiene Queue-it:    {'SI (QueueITAccepted)' if has_queueit else 'NO'}")
     if age_minutes is not None:
         print(f"  Subidas hace:      {age_minutes} minutos ({updated_at_str})")
-        if age_minutes > 80:
-            print(f"  AVISO: Tienen mas de 80 minutos. Queue-it suele expirar a los ~80-90 min.")
-            if not force:
-                print("  (Podes usar --force si queres guardarlas de todos modos)")
+        if age_minutes >= MAX_AGE_MINUTES and not force:
+            print(f"  NO SE GUARDAN: tienen {age_minutes} min (maximo {MAX_AGE_MINUTES}).")
+            print("  --list muestra las otras. --force las baja igual.")
+            list_history(worker_url, code, api_key)
+            return False
     else:
         print(f"  Actualizadas:      {updated_at_str}")
 
@@ -219,7 +265,15 @@ def main():
     )
     parser.add_argument(
         '--force', action='store_true',
-        help='Guardar aunque las cookies parezcan antiguas'
+        help='Guardar aunque las cookies tengan 60 minutos o mas'
+    )
+    parser.add_argument(
+        '--list', action='store_true',
+        help='Mostrar los juegos guardados en el worker (maximo 10) sin descargar'
+    )
+    parser.add_argument(
+        '--id', dest='item_id', default=None,
+        help='Bajar un juego puntual del historial en vez del ultimo'
     )
     parser.add_argument(
         '--url', default=DEFAULT_WORKER_URL,
@@ -228,6 +282,10 @@ def main():
     args = parser.parse_args()
 
     code, api_key = get_credentials(args.code)
+
+    if args.list:
+        ok = list_history(args.url, code, api_key)
+        sys.exit(0 if ok else 1)
 
     if args.watch:
         print(f"[*] Monitoreando estado de la fila en vivo desde {args.url} (Ctrl+C para salir)...")
@@ -354,7 +412,8 @@ def main():
         code=code,
         api_key=api_key,
         output_path=args.output,
-        force=args.force
+        force=args.force,
+        item_id=args.item_id,
     )
     if not ok:
         sys.exit(1)

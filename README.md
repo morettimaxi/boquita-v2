@@ -7,7 +7,7 @@
 | `platea/` | Laterales (Node): reserva plateas por sector | [platea/README.md](platea/README.md) |
 | `cloud/` | **Nuevo:** Operación remota entre 2 PCs, telemetría de fila en vivo y auto-descarga de cookies | [cloud/README.md](cloud/README.md) |
 
-Todos los comandos están en dos versiones: **Git Bash** y **PowerShell**. Usá la que tengas abierta.
+En Windows los comandos están en **Git Bash** y **PowerShell**. En Mac se usa la **Terminal** (zsh). El día del partido, el detalle de cada comando está en [commands-correr.md](commands-correr.md).
 
 | | Git Bash | PowerShell |
 |---|---|---|
@@ -94,6 +94,75 @@ Cerrar y abrir la terminal para que las tome. Comprobar:
 | Git Bash | PowerShell |
 |---|---|
 | `cd /c/projects/boquita-v2 && git pull` | `cd C:\projects\boquita-v2; git pull` |
+
+### 1.5 Instalar en Mac
+
+El README de arriba es Windows. En Mac, una sola vez, en la Terminal:
+
+```bash
+# Si no tenés Homebrew: https://brew.sh
+brew install git python@3.12 node gh
+brew install --cask google-chrome firefox
+```
+
+Cerrar y abrir la Terminal. Después:
+
+```bash
+gh auth login
+mkdir -p ~/projects && cd ~/projects
+gh repo clone morettimaxi/boquita-v2
+cd ~/projects/boquita-v2
+python3 -m pip install -r requirements.txt
+cd platea && npm install && cd ..
+```
+
+`gh auth login`: GitHub.com, HTTPS, con la cuenta que tiene acceso al repo.
+
+La clave del Worker ya está escrita en `queue_bot.py`, `queue_bot_cloud.py`, `upload_latest_cookies.py`, `upload_cookies.py` y `capture_browser.py`. En Mac no hace falta `setx`.
+
+`socios.csv` no está en el repo. Copiarlo desde la PC de Windows a la Mac, en:
+
+```text
+~/projects/boquita-v2/popular-reserva/socios.csv
+```
+
+Desde la Mac, si la PC de Windows está prendida y comparte la carpeta, o pasándolo por AirDrop / pendrive. El archivo tiene que llamarse `socios.csv` y quedar en `popular-reserva/`.
+
+Chrome tiene que estar instalado. Selenium baja el driver solo la primera vez que corre `queue_bot.py`.
+
+Comprobar:
+
+```bash
+python3 --version
+node --version
+google-chrome --version || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+```
+
+Actualizar después:
+
+```bash
+cd ~/projects/boquita-v2 && git pull
+```
+
+Para correr, los mismos Python del día del partido, cambiando la ruta:
+
+```bash
+cd ~/projects/boquita-v2/queue-manager
+python3 queue_bot.py
+```
+
+```bash
+cd ~/projects/boquita-v2/popular-reserva
+python3 download_latest_cookies.py --watch
+python3 adicional_copa.py --evento 869
+python3 abrir-pago.py --csv socios.csv --evento 869
+```
+
+Si en la Mac `python3` es el que funciona y `python` no existe, usá `python3` en todos los comandos de [commands-correr.md](commands-correr.md). El dashboard sigue siendo `http://localhost:5000`.
+
+El `.bat` de Firefox es de Windows. En Mac abrí Firefox a mano y entrá a:
+
+`https://boca-cookies.rosaleseze86.workers.dev/go/Cangele2015`
 
 ---
 
