@@ -13,6 +13,7 @@ Uso:
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -212,6 +213,11 @@ class Waf418SessionManager(queue_bot.SessionManager):
         except Exception as error:
             queue_bot.logger.warning(f"418 sesion {session['id']}: no pude guardar el JSON local: {error}")
 
+        queue_bot.logger.info(
+            f"418 sesion {session['id']}: intentando subir a /api/waf418 "
+            f"({len(cookies)} cookies, origenes={len(origins)}, "
+            f"localStorage={len(local_storage)}, sessionStorage={len(session_storage)})"
+        )
         try:
             response = http_requests.post(
                 f"{queue_bot.WORKER_URL}/api/waf418",
@@ -251,6 +257,66 @@ class Waf418SessionManager(queue_bot.SessionManager):
             f"localStorage={len(local_storage)}, sessionStorage={len(session_storage)})"
         )
 
+    def _upload_to_worker(self, session_id, cookies, cookie_string, local_storage):
+        queue_bot.logger.info(
+            f"Sesion {session_id}: intentando subir cookies a /api/cookies "
+            f"({len(cookies)} cookies, localStorage={len(local_storage or {})})"
+        )
+        return super()._upload_to_worker(session_id, cookies, cookie_string, local_storage)
+
+    def _refresh_live_times(self):
+        for session in list(self.sessions):
+            driver = session.get('driver')
+            previous = session.get('wait_time')
+            if not driver or previous is None:
+                continue
+            try:
+                if not driver.service.is_connectable():
+                    queue_bot.logger.warning(
+                        f"Sesion {session['id']}: Chrome cerrado, no pude validar el tiempo"
+                    )
+                    continue
+                url = driver.current_url or ''
+                if 'queueittoken=' in url or '/queueit/redirect' in url or 'bocasocios.bocajuniors.com.ar' in url:
+                    queue_bot.logger.info(
+                        f"Sesion {session['id']}: ya salio de la fila, no refresco ({url[:140]})"
+                    )
+                    continue
+                driver.refresh()
+                time.sleep(1.5)
+                text = driver.execute_script(
+                    "var el=document.getElementById('MainPart_lbWhichIsIn');"
+                    "return el ? (el.innerText || el.textContent || '') : '';"
+                ) or ''
+                text = str(text).strip()
+            except Exception as error:
+                queue_bot.logger.warning(
+                    f"Sesion {session['id']}: no pude validar el tiempo: {error}"
+                )
+                continue
+
+            low = text.lower()
+            new_time = None
+            if any(phrase in low for phrase in ('más de una hora', 'mas de una hora', 'more than an hour', 'over an hour')):
+                new_time = 65
+            else:
+                match = re.search(r'(\d+)', text)
+                if match:
+                    value = int(match.group(1))
+                    if 0 <= value <= 180:
+                        new_time = value
+            if new_time is None:
+                queue_bot.logger.info(
+                    f"Sesion {session['id']}: la pagina no dice minutos ('{text[:80]}'), dejo {previous}"
+                )
+                continue
+            session['wait_time'] = new_time
+            session['raw_time_text'] = text
+            session['last_update'] = datetime.now()
+            queue_bot.logger.info(
+                f"Sesion {session['id']}: tiempo real {new_time} min (antes {previous})"
+            )
+
 
 queue_bot.SessionManager = Waf418SessionManager
 
@@ -265,6 +331,7 @@ def _report_queue_once():
     timed = [session for session in manager.sessions if session.get('wait_time') is not None]
     if not timed:
         return
+    manager._refresh_live_times()
     stats = manager.get_stats()
     passed = sum(
         1 for session in manager.sessions
@@ -321,7 +388,8 @@ if __name__ == '__main__':
     print("Si una sesion recibe 418 en bocasocios, sube cookies + localStorage + sessionStorage")
     print("a la cola aparte POST /api/waf418. /api/cookies/latest no se pisa.")
     print(f"Nombre de este servidor: {SERVER_NAME}")
-    print("Cada 2 minutos, si ya hay tiempos, los sube al Worker.")
+    print("Cada 2 minutos refresca la pagina, lee el tiempo real y lo sube al Worker.")
+    print("Avisa en el log cuando intenta subir un 418 o las cookies finales.")
     print("Dashboard: http://localhost:5000")
     print("=" * 80)
     queue_bot.app.run(debug=False, host='0.0.0.0', port=5000)
