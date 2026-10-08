@@ -42,6 +42,18 @@ export default {
       return handleGetHistoryItem(request, env, histItem[1]);
     }
 
+    if (path === '/api/waf418' && request.method === 'POST') {
+      return handlePostWaf418(request, env);
+    }
+
+    if (path === '/api/waf418/latest' && request.method === 'GET') {
+      return handleGetWaf418Latest(request, env);
+    }
+
+    if (path === '/api/waf418/history' && request.method === 'GET') {
+      return handleGetWaf418History(request, env);
+    }
+
     if (path === '/api/cookies/status' && request.method === 'GET') {
       return handleGetStatus(env);
     }
@@ -272,6 +284,128 @@ async function handleGetHistoryItem(request, env, id) {
   } catch {
     return json({ error: 'Juego de cookies ilegible' }, 500);
   }
+}
+
+const WAF418_INDEX = 'waf418_history';
+const WAF418_MAX = 10;
+
+async function handlePostWaf418(request, env) {
+  const apiKey = request.headers.get('X-API-Key');
+  if (apiKey !== env.API_KEY) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const cookies = Array.isArray(body.cookies) ? body.cookies : [];
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const data = {
+    id,
+    cookies,
+    cookie_string: body.cookie_string || '',
+    local_storage: body.local_storage || {},
+    session_storage: body.session_storage || {},
+    origins: body.origins || {},
+    url: body.url || '',
+    page_url: body.page_url || '',
+    user_agent: body.user_agent || '',
+    response_headers: body.response_headers || {},
+    status: 418,
+    evento: body.evento || null,
+    source: body.source || 'queue-bot-418',
+    updated_at: new Date().toISOString(),
+  };
+
+  await env.COOKIES_KV.put(`waf418:${id}`, JSON.stringify(data));
+
+  try {
+    let index = [];
+    const raw = await env.COOKIES_KV.get(WAF418_INDEX);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) index = parsed;
+    }
+    index = index.filter((item) => item && item.id && item.id !== id);
+    index.unshift({
+      id,
+      updated_at: data.updated_at,
+      source: data.source,
+      url: data.url,
+      total_count: cookies.length,
+    });
+    const dropped = index.slice(WAF418_MAX);
+    index = index.slice(0, WAF418_MAX);
+    await env.COOKIES_KV.put(WAF418_INDEX, JSON.stringify(index));
+    for (const old of dropped) {
+      try {
+        if (old && old.id) await env.COOKIES_KV.delete(`waf418:${old.id}`);
+      } catch {
+        // un juego viejo no frena el nuevo
+      }
+    }
+  } catch {
+    // el juego ya quedo guardado; el indice es extra
+  }
+
+  return json({
+    ok: true,
+    id,
+    total_count: cookies.length,
+    updated_at: data.updated_at,
+    queue: 'waf418',
+  });
+}
+
+async function handleGetWaf418Latest(request, env) {
+  const code = authorizeRead(request);
+  if (!code || code !== env.ACCESS_CODE) {
+    return json({ error: 'Codigo de acceso invalido' }, 403);
+  }
+  let index = [];
+  try {
+    const raw = await env.COOKIES_KV.get(WAF418_INDEX);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) index = parsed;
+    }
+  } catch {
+    return json({ error: 'Cola 418 no disponible' }, 200);
+  }
+  if (!index.length || !index[0].id) {
+    return json({ error: 'No hay capturas 418' }, 404);
+  }
+  const item = await env.COOKIES_KV.get(`waf418:${index[0].id}`);
+  if (!item) {
+    return json({ error: 'No hay capturas 418' }, 404);
+  }
+  try {
+    return json(JSON.parse(item));
+  } catch {
+    return json({ error: 'Captura 418 ilegible' }, 500);
+  }
+}
+
+async function handleGetWaf418History(request, env) {
+  const code = authorizeRead(request);
+  if (!code || code !== env.ACCESS_CODE) {
+    return json({ error: 'Codigo de acceso invalido' }, 403);
+  }
+  let index = [];
+  try {
+    const raw = await env.COOKIES_KV.get(WAF418_INDEX);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) index = parsed;
+    }
+  } catch {
+    return json({ sets: [], history_ok: false });
+  }
+  return json({ sets: index, history_ok: true });
 }
 
 async function handleGetLatest(request, env) {

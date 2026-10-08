@@ -107,9 +107,14 @@ def list_history(worker_url: str, code: str, api_key: str):
     return True
 
 
-def download_cookies(worker_url: str, code: str, api_key: str, output_path: str, force: bool = False, item_id: str = None):
+def download_cookies(worker_url: str, code: str, api_key: str, output_path: str, force: bool = False, item_id: str = None, endpoint: str = None):
     headers, params = _auth(code, api_key)
-    target = f'{worker_url}/api/cookies/history/{item_id}' if item_id else f'{worker_url}/api/cookies/latest'
+    if endpoint:
+        target = endpoint
+    elif item_id:
+        target = f'{worker_url}/api/cookies/history/{item_id}'
+    else:
+        target = f'{worker_url}/api/cookies/latest'
 
     print(f"Consultando worker: {target} ...")
     try:
@@ -127,8 +132,11 @@ def download_cookies(worker_url: str, code: str, api_key: str, output_path: str,
             print(f"ERROR: no esta el juego {item_id} (HTTP 404).")
             print("Mira los ids con: python download_latest_cookies.py --list")
         else:
-            print(f"ERROR: No hay cookies guardadas en el worker todavia (HTTP 404).")
-            print(f"Ejecuta primero el queue_bot o un upload.")
+            if 'waf418' in target:
+                print("ERROR: todavia no hay capturas 418 en el worker (HTTP 404).")
+            else:
+                print(f"ERROR: No hay cookies guardadas en el worker todavia (HTTP 404).")
+                print(f"Ejecuta primero el queue_bot o un upload.")
         return False
     elif not resp.ok:
         print(f"ERROR HTTP {resp.status_code}: {resp.text}")
@@ -276,6 +284,10 @@ def main():
         help='Bajar un juego puntual del historial en vez del ultimo'
     )
     parser.add_argument(
+        '--waf418', action='store_true',
+        help='Bajar la ultima captura del 418 (cola aparte, no pisa la cookie normal)'
+    )
+    parser.add_argument(
         '--url', default=DEFAULT_WORKER_URL,
         help=f'URL base del worker (default: {DEFAULT_WORKER_URL})'
     )
@@ -407,13 +419,23 @@ def main():
 
         sys.exit(0)
 
+    endpoint = None
+    output_path = args.output
+    force = args.force
+    if args.waf418:
+        endpoint = f'{args.url}/api/waf418/latest'
+        force = True
+        if output_path == 'boca_cookies_worker.json':
+            output_path = 'boca_cookies_418.json'
+
     ok = download_cookies(
         worker_url=args.url,
         code=code,
         api_key=api_key,
-        output_path=args.output,
-        force=args.force,
+        output_path=output_path,
+        force=force,
         item_id=args.item_id,
+        endpoint=endpoint,
     )
     if not ok:
         sys.exit(1)
