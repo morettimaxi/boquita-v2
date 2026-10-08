@@ -81,6 +81,7 @@ class Waf418SessionManager(queue_bot.SessionManager):
                 continue
         if not hit_url:
             return
+        session['waf418_seen'] = True
         queue_bot.logger.info(f"418 en sesion {session['id']}: {hit_url[:180]}")
         self._upload_418(session, hit_url, hit_headers)
 
@@ -357,12 +358,15 @@ def _report_queue_once():
         headers={'X-API-Key': queue_bot.WORKER_API_KEY, 'Content-Type': 'application/json'},
         timeout=10,
     )
+    seen = [str(session['id']) for session in manager.sessions if session.get('waf418_seen') or session.get('waf418_uploaded')]
+    cookie_ids = [str(session['id']) for session in manager.sessions if session.get('cookies_uploaded')]
     if not response.ok:
         queue_bot.logger.warning(f'Fila {SERVER_NAME}: Worker HTTP {response.status_code}')
         return
     queue_bot.logger.info(
         f'Fila {SERVER_NAME} -> Worker: mejor {stats.get("best_time")} min, '
-        f'{total} sesiones, cookies subidas {uploaded}'
+        f'{total} sesiones, cookies subidas {uploaded} ({",".join(cookie_ids) or "ninguna"}), '
+        f'418: {",".join(seen) or "ninguna"}'
     )
 
 
